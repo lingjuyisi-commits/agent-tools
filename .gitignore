@@ -1,0 +1,4 @@
+node_modules/
+*.db
+.agent-tools/
+.agent-tools-server/

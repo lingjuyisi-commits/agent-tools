@@ -1,0 +1,119 @@
+#!/usr/bin/env node
+
+// Called by AI coding agents via hook configuration.
+// Reads event data from stdin, normalizes it, stores locally, and optionally syncs.
+// MUST never block or crash the agent — all errors are silently caught.
+
+async function main() {
+  // Parse CLI args
+  const args = process.argv.slice(2);
+  const agentArg = args.find(a => a.startsWith('--agent='));
+  const eventArg = args.find(a => a.startsWith('--event='));
+
+  const agent = agentArg ? agentArg.split('=')[1] : 'unknown';
+  const eventType = eventArg ? eventArg.split('=')[1] : 'unknown';
+
+  // Read stdin (agent pipes JSON event data)
+  const rawData = await readStdin();
+
+  processEvent(agent, eventType, rawData);
+}
+
+function readStdin() {
+  return new Promise((resolve) => {
+    let input = '';
+    const stdin = process.stdin;
+
+    // If stdin is a TTY (no pipe), resolve immediately
+    if (stdin.isTTY) {
+      resolve({});
+      return;
+    }
+
+    stdin.setEncoding('utf-8');
+
+    // Timeout — don't hang forever if no stdin data arrives
+    const timeout = setTimeout(() => {
+      stdin.removeAllListeners();
+      resolve({});
+    }, 1000);
+
+    stdin.on('data', (chunk) => { input += chunk; });
+
+    stdin.on('end', () => {
+      clearTimeout(timeout);
+      let data = {};
+      try {
+        if (input.trim()) data = JSON.parse(input);
+      } catch {
+        // Invalid JSON, use empty object
+      }
+      resolve(data);
+    });
+
+    stdin.on('error', () => {
+      clearTimeout(timeout);
+      resolve({});
+    });
+
+    stdin.resume();
+  });
+}
+
+function processEvent(agent, eventType, rawData) {
+  try {
+    // Load adapter
+    let adapter;
+    try {
+      adapter = require(`./adapters/${agent}`);
+    } catch {
+      // Fallback generic adapter
+      adapter = {
+        normalize: (et, data) => ({
+          agent,
+          session_id: data.session_id || 'unknown',
+          event_type: et.toLowerCase(),
+          tool_name: data.tool_name,
+          model: data.model,
+        }),
+      };
+    }
+
+    // Normalize event using adapter
+    const normalized = adapter.normalize(eventType, rawData);
+
+    // Create full event with system fields using event-normalizer
+    const { createNormalizedEvent } = require('../collector/event-normalizer');
+    const event = createNormalizedEvent(normalized);
+
+    // Store locally in SQLite
+    const { LocalStore } = require('../collector/local-store');
+    const store = new LocalStore();
+    try {
+      store.insert(event);
+
+      // Check if we should trigger a background sync
+      const config = require('../utils/config');
+      const cfg = config.load();
+      const batchSize = cfg?.sync?.batchSize || 100;
+      const unsyncedCount = store.getUnsyncedCount();
+
+      if (unsyncedCount >= batchSize) {
+        store.close();
+        // Fire-and-forget sync
+        const { Uploader } = require('../collector/uploader');
+        const uploader = new Uploader();
+        uploader.sync().catch(() => {}).finally(() => process.exit(0));
+        return;
+      }
+    } finally {
+      try { store.close(); } catch { /* already closed */ }
+    }
+  } catch {
+    // Never fail — silently exit
+  }
+
+  process.exit(0);
+}
+
+main().catch(() => process.exit(0));
