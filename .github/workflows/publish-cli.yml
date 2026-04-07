@@ -40,15 +40,10 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-        with:
-          version: 10
       - uses: actions/setup-node@v4
         with:
           node-version: '20.x'
-          cache: 'pnpm'
-          cache-dependency-path: cli/pnpm-lock.yaml
-      - run: pnpm install --ignore-scripts --prod
+      - run: npm install --ignore-scripts --omit=dev
         working-directory: cli
       - name: Extract version from tag
         id: version
@@ -64,7 +59,7 @@ jobs:
           "
       - name: Pack tarball
         working-directory: cli
-        run: pnpm pack
+        run: npm pack
       - name: Rename tarball
         working-directory: cli
         run: mv *.tgz agent-tools-cli-${{ steps.version.outputs.version }}.tgz
