@@ -9,14 +9,16 @@ async function main() {
   const args = process.argv.slice(2);
   const agentArg = args.find(a => a.startsWith('--agent='));
   const eventArg = args.find(a => a.startsWith('--event='));
+  const dbArg   = args.find(a => a.startsWith('--db='));
 
-  const agent = agentArg ? agentArg.split('=')[1] : 'unknown';
+  const agent    = agentArg ? agentArg.split('=')[1] : 'unknown';
   const eventType = eventArg ? eventArg.split('=')[1] : 'unknown';
+  const dbPath   = dbArg ? dbArg.split('=').slice(1).join('=') : null; // support paths with '='
 
   // Read stdin (agent pipes JSON event data)
   const rawData = await readStdin();
 
-  processEvent(agent, eventType, rawData);
+  processEvent(agent, eventType, rawData, dbPath);
 }
 
 function readStdin() {
@@ -60,7 +62,7 @@ function readStdin() {
   });
 }
 
-function processEvent(agent, eventType, rawData) {
+function processEvent(agent, eventType, rawData, dbPath) {
   try {
     // Load adapter
     let adapter;
@@ -86,9 +88,9 @@ function processEvent(agent, eventType, rawData) {
     const { createNormalizedEvent } = require('../collector/event-normalizer');
     const event = createNormalizedEvent(normalized);
 
-    // Store locally in SQLite
+    // Store locally in SQLite (dbPath overrides default when running in test mode)
     const { LocalStore } = require('../collector/local-store');
-    const store = new LocalStore();
+    const store = new LocalStore(dbPath);
     try {
       store.insert(event);
 

@@ -52,22 +52,44 @@ function injectHooks(options = {}) {
   if (!settings.hooks) settings.hooks = {};
 
   for (const event of hookEvents) {
+    // Claude Code ≥ 2.1.x requires hooks in the new nested format:
+    //   { matcher: "", hooks: [{ type: "command", command: "..." }] }
+    // The old flat format ({ type, command }) silently fails schema validation,
+    // causing ALL user settings (including hooks) to be dropped.
     const hookEntry = {
-      type: 'command',
-      command: `node "${hookScript}" --agent=claude-code --event=${event}`,
-      async: true,
+      matcher: '',
+      hooks: [{
+        type: 'command',
+        command: `node "${hookScript}" --agent=claude-code --event=${event}`,
+        async: true,
+      }],
     };
 
     if (!settings.hooks[event]) {
       settings.hooks[event] = [hookEntry];
     } else if (!Array.isArray(settings.hooks[event])) {
-      // Normalize to array if it isn't
+      // Normalize to array
       settings.hooks[event] = [settings.hooks[event], hookEntry];
     } else {
-      // Check if agent-tools hook already exists
-      const idx = settings.hooks[event].findIndex(
-        (h) => h.command && h.command.includes('agent-tools')
-      );
+      // Migrate any old-format entries to new format
+      settings.hooks[event] = settings.hooks[event].map((h) => {
+        if (h.command && !h.hooks) {
+          // Old flat format → wrap in new nested format
+          const inner = { type: 'command', command: h.command };
+          if (h.async !== undefined) inner.async = h.async;
+          return { matcher: h.matcher ?? '', hooks: [inner] };
+        }
+        return h;
+      });
+
+      // Check if agent-tools hook already exists (look inside nested hooks array)
+      const idx = settings.hooks[event].findIndex((h) => {
+        if (h.command && h.command.includes('agent-tools')) return true;   // old format (just in case)
+        if (Array.isArray(h.hooks)) return h.hooks.some(
+          (inner) => inner.command && inner.command.includes('agent-tools'),
+        );
+        return false;
+      });
       if (idx >= 0) {
         if (options.force) {
           settings.hooks[event][idx] = hookEntry;

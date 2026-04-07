@@ -35,13 +35,30 @@ function injectHooks(options = {}) {
   const hookEvents = ['PreToolUse', 'PostToolUse'];
   if (!settings.hooks) settings.hooks = {};
   for (const event of hookEvents) {
-    const hookEntry = { type: 'command', command: `node "${hookScript}" --agent=codebuddy --event=${event}`, async: true };
+    // Use new nested format: { matcher: "", hooks: [{type, command}] }
+    const hookEntry = {
+      matcher: '',
+      hooks: [{ type: 'command', command: `node "${hookScript}" --agent=codebuddy --event=${event}`, async: true }],
+    };
     if (!settings.hooks[event]) {
       settings.hooks[event] = [hookEntry];
     } else if (!Array.isArray(settings.hooks[event])) {
       settings.hooks[event] = [settings.hooks[event], hookEntry];
     } else {
-      const idx = settings.hooks[event].findIndex(h => h.command && h.command.includes('agent-tools'));
+      // Migrate old-format entries
+      settings.hooks[event] = settings.hooks[event].map((h) => {
+        if (h.command && !h.hooks) {
+          const inner = { type: 'command', command: h.command };
+          if (h.async !== undefined) inner.async = h.async;
+          return { matcher: h.matcher ?? '', hooks: [inner] };
+        }
+        return h;
+      });
+      const idx = settings.hooks[event].findIndex((h) => {
+        if (h.command && h.command.includes('agent-tools')) return true;
+        if (Array.isArray(h.hooks)) return h.hooks.some(i => i.command && i.command.includes('agent-tools'));
+        return false;
+      });
       if (idx >= 0) { if (options.force) settings.hooks[event][idx] = hookEntry; }
       else { settings.hooks[event].push(hookEntry); }
     }

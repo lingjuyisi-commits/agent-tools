@@ -2,9 +2,21 @@ const Database = require('better-sqlite3');
 const config = require('../utils/config');
 
 class LocalStore {
-  constructor() {
-    config.ensureDirs();
-    this.db = new Database(config.DB_FILE);
+  /**
+   * @param {string} [dbPath] - Optional override for the DB file path.
+   *   Used by `agent-tools test` to write into an isolated test database
+   *   instead of the user's production store.
+   */
+  constructor(dbPath) {
+    if (dbPath) {
+      const { mkdirSync } = require('fs');
+      const { dirname } = require('path');
+      mkdirSync(dirname(dbPath), { recursive: true });
+      this.db = new Database(dbPath);
+    } else {
+      config.ensureDirs();
+      this.db = new Database(config.DB_FILE);
+    }
     this.db.pragma('journal_mode = WAL');
     this._init();
   }

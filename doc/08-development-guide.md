@@ -55,6 +55,10 @@
 - [ ] **服务端环境变量覆盖**：通过 `AT_PORT`、`AT_DB_*` 等环境变量配置，无需 config.json
 - [ ] **API Key 可选鉴权**：上报接口可选 `X-Agent-Tools-Key` 校验，适合公网部署
 
+### Phase 6（已完成）
+
+- [x] **Hook 采集测试命令**（`cli/src/cli/test.js`）：`agent-tools test --agent <name>`，端到端验证 hooks 采集是否正常
+
 ---
 
 ## 代码库导航
@@ -411,7 +415,87 @@ const knex = Knex({ client: 'better-sqlite3', connection: { filename: dbPath } }
 const knex = Knex({ client: 'sqlite3', ... });
 ```
 
-### 7. 上报时机的并发问题
+### 7. Claude Code Hook 格式：新旧格式不兼容（≥ 2.1.x）
+
+**重要：Claude Code 2.1.x 起更新了 settings.json 中 hooks 的格式，旧格式会导致 hooks 完全失效。**
+
+#### 旧格式（Claude Code < 2.1.x，现已失效）
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "type": "command",
+        "command": "node universal-hook.js --agent=claude-code --event=PreToolUse",
+        "async": true
+      }
+    ]
+  }
+}
+```
+
+#### 新格式（Claude Code ≥ 2.1.x，当前必须使用）
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node universal-hook.js --agent=claude-code --event=PreToolUse",
+            "async": true
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+#### 失败机制
+
+旧格式不是"降级有效"或"部分有效"，而是**彻底失效**：
+- Claude Code 用 Zod schema 验证 settings.json
+- 旧格式条目缺少必填的 `hooks` 数组字段，schema 验证失败
+- 整个 `userSettings` 被置为 `null`（而非仅忽略 hooks）
+- 所有用户设置（含 hooks）被丢弃，`gd()["PreToolUse"]` = undefined
+- `bb6()` 返回 false，所有 hook 都不触发
+- **无任何错误提示**，agent 正常运行，数据静默丢失
+
+#### 调试方式
+
+在 `-p` 模式下用 `--debug-file` 可以看到 settings 加载信息，但不会直接报告 schema 失败。可用以下方式验证 hooks 格式是否正确：
+
+```bash
+# 测试 hook 是否触发（应创建文件）
+echo '{"matcher":"","hooks":[{"type":"command","command":"touch /tmp/hook_test"}]}' > /tmp/test.json
+
+# 运行 agent-tools setup --force 可自动迁移旧格式到新格式
+agent-tools setup --force
+```
+
+`cli/src/detector/claude-code.js` 的 `injectHooks()` 已处理旧格式迁移（自动将老条目包裹为新格式）。
+
+### 8. Claude Code hooks 在 `-p` 模式子进程中的触发条件
+
+Claude Code 在 `-p`（非交互式）模式下通过 `spawnSync` 调用时，hooks **可以**正常触发，但有以下前提条件：
+
+1. **hooks 必须使用新格式**（见 §7）。旧格式会导致 userSettings 被整体丢弃，hooks 完全不触发。
+2. **不能传 `--bare` 标志**（会设置 `CLAUDE_CODE_SIMPLE=1` 跳过 hooks）。
+3. **工作区信任**：`-p` 模式自动信任当前目录（跳过弹窗），无需手动配置。
+4. 设置文件路径：`Y7()` 优先读 `CLAUDE_CONFIG_DIR` 环境变量，默认为 `~/.claude`。
+
+#### `--settings` 和 project-level settings 的限制
+
+- **`--settings <file>` 不加载 hooks**：这是 Claude Code 的安全限制，`--settings` 仅用于合并部分设置，不处理 hooks。
+- **`.claude/settings.json`（project-level）不在 `-p` 模式下生效**：项目级设置因工作区信任机制，在非交互模式下可能被忽略。
+- **结论**：hooks 必须注入到用户级设置 `~/.claude/settings.json`，test 命令通过临时注入并在 finally 块恢复来实现隔离。
+
+### 9. 上报时机的并发问题
 
 `uploader.js` 的自动上报（`startAutoUpload()`）和手动 `agent-tools sync` 可能同时运行。建议使用文件锁或 `uploading` 状态标志防止并发上报同一批事件：
 
@@ -483,6 +567,65 @@ console.log('Pending:', store.getPendingEvents().length);
 # 测试服务器健康检查
 curl http://localhost:3000/api/v1/health
 ```
+
+### Hook 采集测试命令（agent-tools test）
+
+`agent-tools test` 是端到端测试命令，通过实际调用 Agent CLI 并验证 hooks 采集到的事件，确认整个管道正常工作。
+
+#### 使用方式
+
+```bash
+# 测试所有已安装的 Agent
+agent-tools test
+
+# 仅测试指定 Agent
+agent-tools test --agent claude-code
+agent-tools test --agent codebuddy
+
+# 调试选项：测试完成后不删除临时目录
+agent-tools test --agent claude-code --keep
+
+# 自定义超时（秒，默认 60）
+agent-tools test --agent claude-code --timeout 90
+```
+
+#### 技术方案
+
+**隔离机制**：每次测试在系统临时目录创建 `agent-tools-test-XXXX/` 文件夹，包含：
+- `test.db`：专用 SQLite 测试库（与生产库完全独立）
+- `work/`：Agent 工作目录（避免污染当前目录）
+
+**Hook 注入**：测试时临时修改用户级配置（如 `~/.claude/settings.json`），注入指向 `test.db` 的同步 hooks（`--db=<path>` 参数传给 `universal-hook.js`）。测试结束后在 `finally` 块恢复原始配置。hooks 中不设置 `async: true`（同步模式），确保 Agent 进程退出时所有写入已完成。
+
+**注入时同步迁移**：`injectTestHooks()` 在注入测试条目时，会同时将已存在的旧格式 hooks 自动迁移为新格式，避免旧格式导致整个 settings 被丢弃。
+
+**Skill 测试**：Skill 文件临时放置在 `~/.claude/commands/<skill-name>.md`（用户级命令目录），测试完成后立即删除。注意：`--plugin-dir` 和 `.claude/skills/` 均无法在 `-p` 模式下加载 skill，必须使用 `~/.claude/commands/`。
+
+#### Claude Code 测试场景
+
+| 场景 | Agent 指令 | 验证事件 |
+|------|-----------|---------|
+| 基础工具调用 | `Write "hello" to greet.txt` | `session_start`、`user_message`、`tool_pre`、`tool_use`（含 `tool_name`、`session_id`）、`assistant_stop` |
+| Skill 调用 | `/agent-tools-test-verify` | `skill_use`，`skill_name=agent-tools-test-verify` |
+
+**注意**：`PostToolUse` 事件中不包含 token 用量（`usage` 字段为空）。token 数据仅在 Stop/SessionEnd hook 中的 `usage` 字段提供，但当前版本（2.1.x）的 Stop/SessionEnd hook 数据中也没有 token 信息，因此 token 相关字段（`token_input`/`token_output`）在工具调用事件中始终为 0。
+
+#### CodeBuddy 测试场景
+
+| 场景 | Agent 指令 | 验证事件 |
+|------|-----------|---------|
+| 基础工具调用 | `Write "hello" to greet.txt` | `tool_pre`、`tool_use`（含 `tool_name`） |
+
+#### 关键实现文件
+
+| 文件 | 变更说明 |
+|------|---------|
+| `cli/src/hooks/universal-hook.js` | 新增 `--db=<path>` 参数支持，用于写入测试库 |
+| `cli/src/collector/local-store.js` | `LocalStore` 构造函数接受可选 `dbPath` 参数 |
+| `cli/src/cli/test.js` | 测试命令主逻辑：临时环境 → 运行场景 → 验证 → 报告 → 清理 |
+| `cli/bin/cli.js` | 注册 `test` 子命令 |
+
+---
 
 ### 调试 Hook 脚本
 

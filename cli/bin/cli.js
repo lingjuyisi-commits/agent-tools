@@ -98,4 +98,15 @@ program
     }
   });
 
+program
+  .command('test')
+  .description('Test hook collection by running real agent tasks in a temporary environment')
+  .option('--agent <name>', 'Agent to test: claude-code, codebuddy (default: all installed)')
+  .option('--keep', 'Keep temp directory after test (useful for debugging)', false)
+  .option('--timeout <seconds>', 'Seconds to wait per scenario before timing out', '60')
+  .action(async (options) => {
+    const { runTest } = require('../src/cli/test');
+    await runTest({ ...options, timeout: parseInt(options.timeout, 10) });
+  });
+
 program.parse();
