@@ -6,6 +6,8 @@
 
 ## 项目当前状态
 
+> 当前目标范围：**Claude Code + CodeBuddy**（v1 不扩展其他 Agent）
+
 ### Phase 1（已完成）
 
 - [x] Claude Code hook 注入（`~/.claude/settings.json`）
@@ -19,40 +21,39 @@
 - [x] 首次运行交互式向导（SQLite 路径选择）
 - [x] CLI 命令：`init`、`setup`、`sync`、`status`
 
-### Phase 2（待实现）
+### Phase 2（已完成）
 
-- [ ] CodeBuddy 支持（detector + adapter）
-- [ ] `agent-tools stats` 本地查询命令
-- [ ] `agent-tools agents` 命令
-- [ ] 服务端向导支持 MySQL / PostgreSQL
-- [ ] Knex migrations 脚本（`server/migrations/`）
-- [ ] `daily_stats` 表和聚合定时任务
+- [x] CodeBuddy 支持（`cli/src/detector/codebuddy.js` + `cli/src/hooks/adapters/codebuddy.js`）
+- [x] `agent-tools stats` 本地查询命令（`cli/src/cli/stats.js`）
+- [x] `agent-tools agents` 命令（`cli/bin/cli.js`）
+- [x] 服务端向导支持 MySQL / PostgreSQL（`server/src/init-wizard.js`）
+- [x] Knex migrations 脚本（`server/migrations/001~004`）
+- [x] `daily_stats` 聚合定时任务（`server/src/jobs/daily-aggregation.js`）
 
-### Phase 3（待实现）
+### Phase 3（已完成）
 
-- [ ] Web Dashboard 基础框架（`server/src/dashboard/index.html`）
-- [ ] Overview Tab（汇总卡片 + Token 趋势图）
-- [ ] Ranking Tab（排名表格）
-- [ ] `/api/v1/stats/trend` 接口
-- [ ] `/api/v1/stats/ranking` 接口（支持 drilldown 参数）
+- [x] Web Dashboard 基础框架（`server/src/dashboard/index.html`，单文件 SPA）
+- [x] Overview Tab（KPI 卡片 + Token 趋势折线图 + Agent 分布饼图）
+- [x] Ranking Tab（指标选择 + 排名柱状图 + 表格）
+- [x] `/api/v1/stats/trend` 接口
+- [x] `/api/v1/stats/ranking` 接口
 
-### Phase 4（待实现）
+### Phase 4（已完成）
 
-- [ ] Dashboard Drilldown Tab
-- [ ] Dashboard Tools Tab
-- [ ] `/api/v1/stats/drilldown` 接口
-- [ ] `/api/v1/stats/tool-usage` 接口
-- [ ] `/api/v1/stats/models` 和 `/api/v1/stats/event-types` 接口
-- [ ] 数据保留策略（定时清理，`node-cron`）
+- [x] Dashboard Drilldown Tab（用户/机器下钻，饼图 + 表格）
+- [x] Dashboard Tools Tab（工具使用频率柱状图 + 事件类型表格）
+- [x] `/api/v1/stats/drilldown` 接口
+- [x] `/api/v1/stats/tool-usage` 接口
+- [x] `/api/v1/stats/models` 和 `/api/v1/stats/event-types` 接口
+- [x] Skill 调用统计（斜线命令 + 模型发起的 Skill tool）
+- [x] Dashboard 自定义日期范围选择器（Custom period）
+- [x] GitHub Actions CI/CD（`ci.yml`、`publish-cli.yml`、`publish-server.yml`）
 
 ### Phase 5（待实现）
 
-- [ ] OpenCode 支持
-- [ ] 服务端向导支持 `--skip-wizard` / 环境变量完整覆盖
-- [ ] 客户端自动更新检测
-- [ ] Dashboard 时间范围选择器（自定义日期段）
-- [ ] 多模型对比视图
-- [ ] npm 发布流程（CI/CD）
+- [ ] **数据保留清理任务**：定时删除超出保留期的旧事件（目前无清理逻辑）
+- [ ] **服务端环境变量覆盖**：通过 `AT_PORT`、`AT_DB_*` 等环境变量配置，无需 config.json
+- [ ] **API Key 可选鉴权**：上报接口可选 `X-Agent-Tools-Key` 校验，适合公网部署
 
 ---
 
@@ -64,36 +65,38 @@
 
 | 文件路径 | 职责 |
 |----------|------|
-| `cli/bin/cli.js` | CLI 入口，注册所有命令（Commander.js） |
+| `cli/bin/cli.js` | CLI 入口，注册所有命令（Commander.js）：init / setup / sync / stats / status / agents |
 | `cli/src/hooks/universal-hook.js` | Hook 脚本入口：从 stdin 读取 JSON → 选择适配器 → 调用 `local-store` 存储。**此文件必须永不 crash** |
-| `cli/src/hooks/adapters/claude-code.js` | Claude Code 事件字段映射：将 Claude Code 的原始 hook 数据 normalize 为 `StandardEvent` |
-| `cli/src/hooks/adapters/codebuddy.js` | CodeBuddy 适配器（Phase 2 待实现） |
-| `cli/src/detector/index.js` | 检测器注册表：`getAllDetectors()` 返回所有已注册 detector 实例 |
+| `cli/src/hooks/adapters/claude-code.js` | Claude Code 适配器：normalize 原始 hook 数据，含斜线命令和 Skill 工具检测 |
+| `cli/src/hooks/adapters/codebuddy.js` | CodeBuddy 适配器：normalize PreToolUse / PostToolUse 数据 |
+| `cli/src/detector/index.js` | 检测器注册表：`detectAll()` / `setupAll()` |
 | `cli/src/detector/claude-code.js` | Claude Code 检测器：`isInstalled()`、`configExists()`、`hasAgentToolsHooks()`、`injectHooks()` |
-| `cli/src/detector/codebuddy.js` | CodeBuddy 检测器（Phase 2 待实现） |
-| `cli/src/collector/local-store.js` | 本地 SQLite 读写：`saveEvent(event)`、`getPendingEvents()`、`markUploaded(ids)` |
-| `cli/src/collector/uploader.js` | 批量 HTTP 上报：`upload()`（读取 pending → POST → markUploaded），`startAutoUpload()` |
-| `cli/src/commands/init.js` | `agent-tools init` 实现 |
-| `cli/src/commands/setup.js` | `agent-tools setup` 实现 |
-| `cli/src/commands/sync.js` | `agent-tools sync` 实现 |
-| `cli/src/commands/status.js` | `agent-tools status` 实现 |
-| `cli/src/commands/stats.js` | `agent-tools stats` 实现（Phase 2 待实现） |
+| `cli/src/detector/codebuddy.js` | CodeBuddy 检测器：同上，注入 `~/.codebuddy/settings.json` |
+| `cli/src/collector/local-store.js` | 本地 SQLite 读写（`LocalStore` 类）：`insert()`、`getUnsynced()`、`markSynced()`、`getLocalStats()` |
+| `cli/src/collector/uploader.js` | 批量 HTTP 上报：读取 pending → `POST /api/v1/events/batch` → markSynced |
+| `cli/src/cli/init.js` | `agent-tools init` 实现（配置服务器 URL，自动触发 setup） |
+| `cli/src/cli/setup.js` | `agent-tools setup` 实现（检测并注入各 Agent hooks） |
+| `cli/src/cli/sync.js` | `agent-tools sync` 实现（手动上报） |
+| `cli/src/cli/stats.js` | `agent-tools stats` 实现（本地 SQLite 查询，支持 --period / --date） |
+| `cli/src/utils/config.js` | 客户端配置管理（`~/.agent-tools/config.json`） |
 
 #### 服务端（`server/`）
 
 | 文件路径 | 职责 |
 |----------|------|
-| `server/bin/server.js` | 服务器入口：解析 CLI 参数，加载配置，启动 Express |
-| `server/src/app.js` | Express 应用初始化：注册路由、中间件 |
-| `server/src/db/knex.js` | Knex 实例创建，根据 config 选择 client |
-| `server/src/db/migrations/` | Knex migration 文件（建表 DDL） |
+| `server/bin/server.js` | 服务器入口：解析 `--port` / `--db-path`，运行 migrations，启动 Fastify |
+| `server/src/app.js` | Fastify 应用：注册 CORS、静态文件、health / events / stats 路由 |
+| `server/src/db.js` | `createDb(config)` — Knex 实例创建，自动建 SQLite 数据目录 |
+| `server/migrations/` | Knex migration 文件（001-004：events / sessions / daily_stats / tool_usage_detail） |
 | `server/src/routes/events.js` | `POST /api/v1/events/batch` 路由 |
-| `server/src/routes/stats.js` | 所有 `GET /api/v1/stats/*` 路由注册 |
+| `server/src/routes/stats.js` | 所有 `GET /api/v1/stats/*` 路由 |
 | `server/src/routes/health.js` | `GET /api/v1/health` 路由 |
-| `server/src/services/event-service.js` | 写入 + 去重：`batchInsert(events)` → 按 `event_id` 去重后 insert |
-| `server/src/services/stats-service.js` | 查询逻辑核心：`computeDateRange(params)` 计算时间范围，`applyFilters(query, params)` 附加过滤条件，各统计方法 |
-| `server/src/wizard/index.js` | 首次运行向导：交互式配置数据库和端口 |
-| `server/src/dashboard/index.html` | 单文件前端（ECharts CDN），内嵌 HTML + CSS + JS |
+| `server/src/services/event-service.js` | 批量写入 + event_id 去重 |
+| `server/src/services/stats-service.js` | 统计查询核心：`computeDateRange`、`applyFilters`、`getSummary`、`getRanking`、`getDrilldown`、`getTrend` |
+| `server/src/init-wizard.js` | 首次运行向导：交互式配置 SQLite / MySQL / PostgreSQL 和端口 |
+| `server/src/config.js` | 服务端配置管理（`~/.agent-tools-server/config.json`） |
+| `server/src/jobs/daily-aggregation.js` | 每日聚合 cron 任务（00:05 UTC 触发，写入 daily_stats / tool_usage_detail） |
+| `server/src/dashboard/index.html` | 单文件前端（ECharts CDN）：Overview / Ranking / Drilldown / Tools 四个 Tab |
 
 ---
 
@@ -145,7 +148,7 @@
 
 ## 扩展新 Agent 的步骤
 
-以添加 **OpenCode** 支持为例：
+> v1 范围仅支持 Claude Code 和 CodeBuddy，以下步骤供将来扩展其他 Agent 参考。以添加 **OpenCode** 为例：
 
 ### Step 1：创建 Detector
 
@@ -502,81 +505,114 @@ tail -f /tmp/agent-tools-debug.log
 
 ---
 
-## 待实现功能清单
+## 待实现功能清单（Phase 5）
 
-### Phase 2 任务
+以下三项是目前代码库中**尚未实现**的功能，优先级从高到低：
 
-- [ ] **CodeBuddy Detector**（`cli/src/detector/codebuddy.js`）
-  - `isInstalled()`：检测 `~/.codebuddy/` 目录或 `codebuddy` 可执行文件
-  - `injectHooks()`：向 `~/.codebuddy/settings.json` 注入 hooks（格式待调研）
-- [ ] **CodeBuddy Adapter**（`cli/src/hooks/adapters/codebuddy.js`）
-  - 调研 CodeBuddy hook 传入的原始数据字段结构
-  - 实现 `normalize(rawData, eventType)` 映射到 `StandardEvent`
-- [ ] **`agent-tools stats` 命令**（`cli/src/commands/stats.js`）
-  - 从本地 SQLite 查询，支持 `--period` 和 `--date` 参数
-  - 格式化输出 Token 统计、工具使用 Top 5
-- [ ] **`agent-tools agents` 命令**（`cli/src/commands/agents.js`）
-  - 遍历所有 detectors，输出安装状态和 hooks 注入状态
-- [ ] **服务端向导 MySQL/PostgreSQL 支持**（`server/src/wizard/index.js`）
-  - 选择 MySQL/PostgreSQL 时显示 host/port/database/user/password 输入项
-  - 测试连接：`knex.raw('SELECT 1')`
-- [ ] **Knex Migrations**（`server/src/db/migrations/`）
-  - `001_create_events.js`：events 表
-  - `002_create_sessions.js`：sessions 表
-  - `003_create_daily_stats.js`：daily_stats 表
-- [ ] **`daily_stats` 聚合定时任务**（`server/src/jobs/aggregate.js`）
-  - 每天凌晨 1:00 将前一天的 events 汇总写入 `daily_stats`
+### 1. 数据保留清理任务
 
-### Phase 3 任务
+**文件**：`server/src/jobs/cleanup.js`（待新建）
 
-- [ ] **Web Dashboard 框架**（`server/src/dashboard/index.html`）
-  - 单文件，内嵌 ECharts CDN + CSS + JavaScript
-  - Tab 切换：Overview / Ranking / Drilldown / Tools
-  - 顶部过滤栏：时间段选择、Agent 过滤、模型过滤
-- [ ] **Overview Tab**
-  - 汇总卡片：总 Token、会话数、对话轮次、活跃用户数
-  - Token 趋势折线图（调用 `/api/v1/stats/trend`）
-  - 输入/输出 Token 堆叠图
-- [ ] **Ranking Tab**
-  - 按 username / hostname / agent 切换（调用 `/api/v1/stats/ranking?drilldown=xxx`）
-  - 表格展示：排名、标识、Token 总数、会话数、活跃天数
-- [ ] **`/api/v1/stats/trend` 接口**（`server/src/services/stats-service.js`）
-  - 按天 GROUP BY，返回 `[{ date, total_tokens, session_count }]`
-- [ ] **`/api/v1/stats/ranking` 接口**
-  - 支持 `drilldown` 参数动态 GROUP BY 字段
+每天定时删除超出保留期的旧数据，防止数据库无限膨胀：
 
-### Phase 4 任务
+- 每天凌晨 2:00 UTC 执行（使用 `node-cron`，与 daily-aggregation 错开）
+- 默认保留 90 天的 events，30 天的 tool_usage_detail
+- 保留期可在 `~/.agent-tools-server/config.json` 的 `retention` 字段配置
 
-- [ ] **Dashboard Drilldown Tab**
-  - 点击 Ranking 中某行 → 下钻到该用户/机器
-  - 饼图：各 Agent 占比；柱状图：日期趋势；工具列表
-- [ ] **Dashboard Tools Tab**
-  - 工具调用次数 Top 20（横向柱状图）
-  - 工具平均耗时表格
-- [ ] **`/api/v1/stats/drilldown` 接口**
-  - 接收 `user` 或 `hostname` 参数
-  - 返回 `by_agent`、`by_model`、`top_tools` 三个维度数据
-- [ ] **`/api/v1/stats/tool-usage` 接口**
-  - 按 `tool_name` GROUP BY，统计次数和平均耗时
-- [ ] **`/api/v1/stats/models` 和 `/api/v1/stats/event-types` 接口**
-- [ ] **数据保留清理任务**（`server/src/jobs/cleanup.js`）
-  - 每天凌晨 2:00 删除超过 `retention.eventsDays` 的 events
-  - 删除超过 `retention.sessionsDays` 的 sessions
+```javascript
+// server/src/jobs/cleanup.js 参考结构
+const cron = require('node-cron');
 
-### Phase 5 任务
+async function runCleanup(db, config) {
+  const eventsDays = config.retention?.eventsDays ?? 90;
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - eventsDays);
+  const cutoffStr = cutoff.toISOString();
 
-- [ ] **OpenCode 支持**（按本文档"扩展新 Agent"步骤实现）
-- [ ] **环境变量完整覆盖**（`server/src/config/index.js`）
-  - 所有配置项均可通过环境变量覆盖，无需 `config.json`
-- [ ] **`--skip-wizard` 参数**
-  - 当所有必要配置通过环境变量提供时，跳过向导直接启动
-- [ ] **客户端自动更新检测**
-  - 启动时检查 npm registry 是否有新版本，提示用户更新
-- [ ] **Dashboard 自定义日期范围选择器**
-  - 日期 picker 控件，设置 `start` 和 `end` 参数
-- [ ] **API Key 可选鉴权**
-  - 生成随机 API Key，客户端配置后在请求头中携带 `X-Agent-Tools-Key`
-  - 服务端中间件验证，无效 key 返回 401
-- [ ] **npm 发布流程**
-  - `cli/package.json` 和 `server/package.json` 配置 `publishConfig`
-  - GitHub Actions workflow：tag 触发 → `npm publish`
+  await db('events').where('event_time', '<', cutoffStr).delete();
+  await db('tool_usage_detail').where('stat_date', '<', cutoffStr.slice(0, 10)).delete();
+}
+
+function startCleanup(db, config) {
+  // 每天 02:05 UTC
+  cron.schedule('5 2 * * *', () => runCleanup(db, config));
+}
+
+module.exports = { startCleanup, runCleanup };
+```
+
+实现后在 `server/bin/server.js` 中调用 `startCleanup(db, cfg)`。
+
+---
+
+### 2. 服务端环境变量覆盖
+
+**文件**：`server/src/config.js`（修改 `load()` 函数）
+
+支持通过环境变量配置服务端，适合容器化部署，无需写入 `config.json`：
+
+| 环境变量 | 对应配置 | 示例 |
+|----------|----------|------|
+| `AT_PORT` | `server.port` | `3000` |
+| `AT_DB_CLIENT` | `database.client` | `better-sqlite3` / `mysql2` / `pg` |
+| `AT_DB_FILE` | `database.connection.filename`（SQLite） | `/data/server.db` |
+| `AT_DB_HOST` | `database.connection.host`（MySQL/PG） | `localhost` |
+| `AT_DB_PORT` | `database.connection.port` | `5432` |
+| `AT_DB_NAME` | `database.connection.database` | `agent_tools` |
+| `AT_DB_USER` | `database.connection.user` | `root` |
+| `AT_DB_PASS` | `database.connection.password` | `secret` |
+
+```javascript
+// server/src/config.js load() 修改参考
+function load() {
+  let cfg = fs.existsSync(CONFIG_FILE)
+    ? JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'))
+    : { server: { port: 3000 }, database: { client: 'better-sqlite3', connection: { filename: DEFAULT_DB_PATH }, useNullAsDefault: true } };
+
+  // Env var overrides
+  if (process.env.AT_PORT) cfg.server.port = parseInt(process.env.AT_PORT, 10);
+  if (process.env.AT_DB_CLIENT) cfg.database.client = process.env.AT_DB_CLIENT;
+  if (process.env.AT_DB_FILE) cfg.database.connection = { filename: process.env.AT_DB_FILE };
+  if (process.env.AT_DB_HOST) {
+    cfg.database.connection = {
+      host: process.env.AT_DB_HOST,
+      port: parseInt(process.env.AT_DB_PORT || '3306', 10),
+      database: process.env.AT_DB_NAME,
+      user: process.env.AT_DB_USER,
+      password: process.env.AT_DB_PASS,
+    };
+  }
+  return cfg;
+}
+```
+
+---
+
+### 3. API Key 可选鉴权
+
+**文件**：`server/src/app.js`（添加中间件）、`server/src/config.js`（存储 key）、`cli/src/collector/uploader.js`（发送请求头）
+
+适合将服务器暴露到公网时使用，默认关闭（内网不需要）：
+
+**服务端**：
+```javascript
+// server/src/app.js 中添加 preHandler
+app.addHook('preHandler', async (request, reply) => {
+  const apiKey = app.config?.security?.apiKey;
+  if (!apiKey) return; // 未配置 key，跳过鉴权
+  // 仅对上报接口鉴权，dashboard 和 stats 不鉴权
+  if (request.url.startsWith('/api/v1/events/')) {
+    if (request.headers['x-agent-tools-key'] !== apiKey) {
+      return reply.status(401).send({ error: 'Unauthorized' });
+    }
+  }
+});
+```
+
+**客户端**（`cli/src/collector/uploader.js`）：
+```javascript
+const headers = { 'Content-Type': 'application/json' };
+if (cfg.apiKey) headers['X-Agent-Tools-Key'] = cfg.apiKey;
+```
+
+API Key 通过 `agent-tools init` 交互配置，或直接写入 `~/.agent-tools/config.json` 的 `apiKey` 字段。
