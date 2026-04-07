@@ -1,6 +1,7 @@
 const {
   getSummary,
   getRanking,
+  getRankingAll,
   getDrilldown,
   getTrend,
   computeDateRange
@@ -16,6 +17,11 @@ async function statsRoutes(fastify, opts) {
 
   fastify.get('/api/v1/stats/ranking', async (request, reply) => {
     const result = await getRanking(db, request.query);
+    return result;
+  });
+
+  fastify.get('/api/v1/stats/ranking-all', async (request, reply) => {
+    const result = await getRankingAll(db, request.query);
     return result;
   });
 
@@ -61,13 +67,38 @@ async function statsRoutes(fastify, opts) {
     return query;
   });
 
-  // Dashboard helper: tool usage frequency
+  // Dashboard helper: tool usage frequency (excludes skill_use events)
   fastify.get('/api/v1/stats/tool-usage', async (request, reply) => {
     let query = db('events')
       .select('tool_name as name')
       .count('* as use_count')
       .whereNotNull('tool_name')
+      .where('event_type', '!=', 'skill_use')
       .groupBy('tool_name')
+      .orderBy('use_count', 'desc')
+      .limit(50);
+
+    const range = computeDateRange(request.query);
+    if (range) {
+      query.where('event_time', '>=', range.start)
+           .where('event_time', '<', range.end + 'T23:59:59.999Z');
+    }
+    if (request.query.model) query.where('model', request.query.model);
+    if (request.query.user) query.where('username', request.query.user);
+
+    return query;
+  });
+
+  // Dashboard helper: skill usage frequency (by skill_name)
+  fastify.get('/api/v1/stats/skill-usage', async (request, reply) => {
+    let query = db('events')
+      .select('skill_name as name')
+      .count('* as use_count')
+      .countDistinct('username as user_count')
+      .countDistinct('session_id as session_count')
+      .where('event_type', 'skill_use')
+      .whereNotNull('skill_name')
+      .groupBy('skill_name')
       .orderBy('use_count', 'desc')
       .limit(50);
 

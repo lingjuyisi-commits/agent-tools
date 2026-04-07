@@ -6,7 +6,10 @@ async function healthRoutes(fastify, opts) {
       status: 'ok',
       version: '0.1.0',
       database: config.database.client,
-      uptime: process.uptime()
+      uptime: process.uptime(),
+      dashboard: {
+        rankingLimit: (config.dashboard && config.dashboard.rankingLimit) || 100,
+      },
     };
   });
 }

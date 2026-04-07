@@ -114,7 +114,9 @@ async function getRanking(db, params) {
     lines_added: db.raw('SUM(lines_added) as metric_value'),
     lines_removed: db.raw('SUM(lines_removed) as metric_value'),
     files_created: db.raw('SUM(files_created) as metric_value'),
-    files_modified: db.raw('SUM(files_modified) as metric_value')
+    files_modified: db.raw('SUM(files_modified) as metric_value'),
+    skill_count: db.raw("SUM(CASE WHEN event_type = 'skill_use' THEN 1 ELSE 0 END) as metric_value"),
+    skill_unique: db.raw("COUNT(DISTINCT CASE WHEN event_type = 'skill_use' THEN skill_name ELSE NULL END) as metric_value"),
   };
 
   const metricExpr = metricMap[metric] || metricMap.token_total;
@@ -123,6 +125,37 @@ async function getRanking(db, params) {
     .select('username', metricExpr)
     .groupBy('username')
     .orderBy('metric_value', 'desc')
+    .limit(limit);
+
+  applyFilters(query, params);
+
+  return query;
+}
+
+/**
+ * GET /api/v1/stats/ranking-all
+ * Returns all metrics per user in a single query. Sorting is done client-side.
+ */
+async function getRankingAll(db, params) {
+  const limit = parseInt(params.limit, 10) || 50;
+
+  let query = db('events')
+    .select(
+      'username',
+      db.raw('COALESCE(SUM(token_input), 0) as token_input'),
+      db.raw('COALESCE(SUM(token_output), 0) as token_output'),
+      db.raw('COALESCE(SUM(token_input + token_output), 0) as token_total'),
+      db.raw('COUNT(DISTINCT session_id) as session_count'),
+      db.raw('COUNT(*) as event_count'),
+      db.raw('COALESCE(SUM(files_created), 0) as files_created'),
+      db.raw('COALESCE(SUM(files_modified), 0) as files_modified'),
+      db.raw('COALESCE(SUM(lines_added), 0) as lines_added'),
+      db.raw('COALESCE(SUM(lines_removed), 0) as lines_removed'),
+      db.raw("SUM(CASE WHEN event_type = 'skill_use' THEN 1 ELSE 0 END) as skill_count"),
+      db.raw("COUNT(DISTINCT CASE WHEN event_type = 'skill_use' THEN skill_name ELSE NULL END) as skill_unique"),
+    )
+    .groupBy('username')
+    .orderBy('token_total', 'desc')
     .limit(limit);
 
   applyFilters(query, params);
@@ -181,4 +214,4 @@ async function getTrend(db, params) {
   return query;
 }
 
-module.exports = { getSummary, getRanking, getDrilldown, getTrend, computeDateRange };
+module.exports = { getSummary, getRanking, getRankingAll, getDrilldown, getTrend, computeDateRange };

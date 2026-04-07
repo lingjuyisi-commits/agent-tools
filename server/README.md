@@ -146,9 +146,9 @@ agent-tools-server
 
 ### Ranking（排名）
 
-- 可按用户名 / 机器名 / Agent 切换排名维度
-- 每行显示：排名、标识名、Token 总数、会话数、活跃天数
-- 支持点击某行下钻到该用户/机器的详细数据
+- 一张表展示所有用户的全部指标：Token（输入/输出/合计）、会话数、事件数、文件创建/修改、行增/删、Skill 使用次数/种类
+- 点击任意列头排序（升序/降序切换），柱状图同步更新
+- 用户数上限由服务器配置 `dashboard.rankingLimit` 控制（默认 100）
 
 ### Drilldown（下钻）
 
@@ -157,11 +157,12 @@ agent-tools-server
 - 柱状图：按日期的 Token 消耗
 - 列表：使用的所有工具及次数
 
-### Tools（工具分析）
+### Tools & Skills（工具与 Skill 分析）
 
-- 所有工具调用的汇总统计
-- 调用次数、平均耗时、成功率
-- 支持按 Agent、模型、用户过滤
+- **Tool 使用频率**：按工具名聚合的横向柱状图（不含 Skill 事件）
+- **Skill 使用频率**：按 Skill 名称聚合的横向柱状图 + 明细表（使用次数、用户数、会话数）
+- **事件类型分布**：饼图展示各事件类型占比
+- Skill 是 Tool 的上层抽象——一次 Skill 调用（如 `/commit`）会触发多次 Tool 调用（Read、Bash、Edit 等）
 
 ---
 
@@ -181,7 +182,9 @@ agent-tools-server
 | `GET` | `/api/v1/stats/trend` | 趋势数据（按天） |
 | `GET` | `/api/v1/stats/models` | 模型使用分布 |
 | `GET` | `/api/v1/stats/event-types` | 事件类型分布 |
-| `GET` | `/api/v1/stats/tool-usage` | 工具使用详情 |
+| `GET` | `/api/v1/stats/tool-usage` | 工具使用详情（不含 Skill） |
+| `GET` | `/api/v1/stats/skill-usage` | Skill 使用统计（按 skill_name 聚合） |
+| `GET` | `/api/v1/stats/ranking-all` | 全指标排名（一次返回所有维度，前端排序） |
 
 ---
 
@@ -194,9 +197,12 @@ agent-tools-server
 ```json
 {
   "status": "ok",
-  "version": "1.0.0",
-  "db": "connected",
-  "uptime": 3600
+  "version": "0.1.0",
+  "database": "better-sqlite3",
+  "uptime": 3600,
+  "dashboard": {
+    "rankingLimit": 100
+  }
 }
 ```
 
@@ -369,19 +375,63 @@ agent-tools-server
 
 ### `GET /api/v1/stats/tool-usage`
 
-获取工具使用详情统计。
+获取工具使用详情统计（不包含 `skill_use` 事件，Skill 是 Tool 的上层抽象）。
 
 **Response 200:**
 
 ```json
-{
-  "data": [
-    { "tool_name": "Read", "count": 1823, "avg_duration_ms": 145, "agents": ["claude-code", "codebuddy"] },
-    { "tool_name": "Edit", "count": 942, "avg_duration_ms": 230 },
-    { "tool_name": "Bash", "count": 687, "avg_duration_ms": 1840 }
-  ]
-}
+[
+  { "name": "Read", "use_count": 1823 },
+  { "name": "Edit", "use_count": 942 },
+  { "name": "Bash", "use_count": 687 }
+]
 ```
+
+---
+
+---
+
+### `GET /api/v1/stats/skill-usage`
+
+获取 Skill 使用统计，按 `skill_name` 聚合。Skill 是 Tool 的上层概念——一次 Skill 调用会触发多次 Tool 使用。
+
+**Response 200:**
+
+```json
+[
+  { "name": "commit", "use_count": 15, "user_count": 3, "session_count": 12 },
+  { "name": "review-pr", "use_count": 8, "user_count": 2, "session_count": 8 }
+]
+```
+
+---
+
+### `GET /api/v1/stats/ranking-all`
+
+获取全指标排名数据，一次返回每个用户的所有指标，排序由前端完成。
+
+**Response 200:**
+
+```json
+[
+  {
+    "username": "leon",
+    "token_input": 388301,
+    "token_output": 5219104,
+    "token_total": 5607405,
+    "session_count": 54,
+    "event_count": 1039,
+    "files_created": 14,
+    "files_modified": 29,
+    "lines_added": 1025,
+    "lines_removed": 15,
+    "skill_count": 18,
+    "skill_unique": 2
+  }
+]
+```
+
+默认返回前 100 个用户（由服务器配置 `dashboard.rankingLimit` 控制）。
 
 ---
 
@@ -425,6 +475,9 @@ agent-tools-server
       "filename": "/Users/leon/.agent-tools-server/data/server.db"
     },
     "useNullAsDefault": true
+  },
+  "dashboard": {
+    "rankingLimit": 100
   },
   "retention": {
     "eventsDays": 90,
@@ -506,7 +559,7 @@ agent-tools-server
 ```bash
 git clone https://github.com/your-org/agent-tools
 cd agent-tools/server
-pnpm install
+npm install
 node bin/server.js --port 3000
 ```
 

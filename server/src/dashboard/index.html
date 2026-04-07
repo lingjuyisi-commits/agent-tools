@@ -124,27 +124,14 @@
 
   <!-- Ranking Tab -->
   <div id="tab-ranking" class="tab-content">
-    <div class="ranking-section">
-      <div style="display:flex;align-items:center;gap:16px;margin:16px 0;">
-        <label>Rank by:</label>
-        <select id="ranking-metric" onchange="loadRanking()">
-          <option value="token_total">Token Total</option>
-          <option value="token_input">Token Input</option>
-          <option value="token_output">Token Output</option>
-          <option value="session_count">Sessions</option>
-          <option value="event_count">Events</option>
-          <option value="lines_added">Lines Added</option>
-          <option value="files_created">Files Created</option>
-          <option value="files_modified">Files Modified</option>
-        </select>
-      </div>
+    <div class="ranking-section" style="padding-top:16px;">
       <div class="charts-grid">
         <div class="chart-card">
           <h3>User Ranking</h3>
           <div id="chart-ranking" class="chart-container"></div>
         </div>
-        <div class="ranking-table" id="ranking-table"></div>
       </div>
+      <div class="ranking-table" id="ranking-table"></div>
     </div>
   </div>
 
@@ -180,6 +167,16 @@
         <h3>Tool Usage Frequency</h3>
         <div id="chart-tools" class="chart-container"></div>
       </div>
+      <div class="chart-card">
+        <h3>Skill Usage Frequency</h3>
+        <div id="chart-skills" class="chart-container"></div>
+      </div>
+    </div>
+    <div class="ranking-section">
+      <h3>Skill Usage Details</h3>
+      <div class="ranking-table" id="skill-table"></div>
+    </div>
+    <div class="charts-grid">
       <div class="chart-card">
         <h3>Event Type Distribution</h3>
         <div id="chart-event-types" class="chart-container"></div>
@@ -228,6 +225,9 @@ async function checkServerStatus() {
   try {
     const data = await fetch(`${API}/health`).then(r => r.json());
     document.getElementById('server-status').textContent = `DB: ${data.database} | Uptime: ${Math.round(data.uptime)}s`;
+    if (data.dashboard && data.dashboard.rankingLimit) {
+      RANKING_LIMIT = data.dashboard.rankingLimit;
+    }
   } catch {
     document.getElementById('server-status').textContent = 'Server unreachable';
     document.getElementById('server-status').style.color = '#f88';
@@ -320,38 +320,81 @@ async function loadAgentDist(trendData) {
 }
 
 // --- Ranking ---
+let rankingData = [];
+let rankingSortCol = 'token_total';
+let rankingSortAsc = false;
+let RANKING_LIMIT = 100; // overridden by server config
+
+const RANKING_COLUMNS = [
+  { key: 'token_total',    label: 'Token Total' },
+  { key: 'token_input',    label: 'Token In' },
+  { key: 'token_output',   label: 'Token Out' },
+  { key: 'session_count',  label: 'Sessions' },
+  { key: 'event_count',    label: 'Events' },
+  { key: 'files_created',  label: 'Files Created' },
+  { key: 'files_modified', label: 'Files Modified' },
+  { key: 'lines_added',    label: 'Lines +' },
+  { key: 'lines_removed',  label: 'Lines -' },
+  { key: 'skill_count',    label: 'Skill Uses' },
+  { key: 'skill_unique',   label: 'Unique Skills' },
+];
+
 async function loadRanking() {
-  const metric = document.getElementById('ranking-metric').value;
   try {
-    const data = await apiFetch('/stats/ranking', { metric, limit: 20 });
-
-    // Bar chart
-    const chart = echarts.init(document.getElementById('chart-ranking'));
-    const sorted = [...data].reverse();
-    chart.setOption({
-      tooltip: {},
-      grid: { left: 100, right: 20, top: 10, bottom: 20 },
-      xAxis: { type: 'value', axisLabel: { formatter: v => fmtK(v) } },
-      yAxis: { type: 'category', data: sorted.map(d => d.username) },
-      series: [{ type: 'bar', data: sorted.map(d => d.metric_value), itemStyle: { color: '#4a90d9' } }],
-    });
-
-    // Table
-    let html = `<table><thead><tr><th>Rank</th><th>User</th><th>${metric}</th></tr></thead><tbody>`;
-    data.forEach((d, i) => {
-      const rank = i + 1;
-      const cls = rank <= 3 ? `rank-${rank}` : 'rank-other';
-      html += `<tr>
-        <td><span class="rank-badge ${cls}">${rank}</span></td>
-        <td>${d.username}</td>
-        <td>${fmtK(d.metric_value)}</td>
-      </tr>`;
-    });
-    html += '</tbody></table>';
-    document.getElementById('ranking-table').innerHTML = html;
+    rankingData = await apiFetch('/stats/ranking-all', { limit: RANKING_LIMIT });
+    renderRanking();
   } catch (e) {
     document.getElementById('ranking-table').innerHTML = `<div class="error">${e.message}</div>`;
   }
+}
+
+function sortRanking(col) {
+  if (rankingSortCol === col) {
+    rankingSortAsc = !rankingSortAsc;
+  } else {
+    rankingSortCol = col;
+    rankingSortAsc = false; // default desc
+  }
+  renderRanking();
+}
+
+function renderRanking() {
+  const sorted = [...rankingData].sort((a, b) => {
+    const va = a[rankingSortCol] || 0;
+    const vb = b[rankingSortCol] || 0;
+    return rankingSortAsc ? va - vb : vb - va;
+  });
+
+  // Bar chart — show top 20 by current sort column
+  const chart = echarts.init(document.getElementById('chart-ranking'));
+  const top20 = sorted.slice(0, 20).reverse();
+  const colLabel = RANKING_COLUMNS.find(c => c.key === rankingSortCol)?.label || rankingSortCol;
+  chart.setOption({
+    tooltip: { formatter: p => `${p.name}: ${fmtK(p.value)}` },
+    grid: { left: 100, right: 20, top: 10, bottom: 20 },
+    xAxis: { type: 'value', axisLabel: { formatter: v => fmtK(v) }, name: colLabel },
+    yAxis: { type: 'category', data: top20.map(d => d.username) },
+    series: [{ type: 'bar', data: top20.map(d => d[rankingSortCol] || 0), itemStyle: { color: '#4a90d9' } }],
+  });
+
+  // Table
+  let html = '<table><thead><tr><th>#</th><th>User</th>';
+  for (const col of RANKING_COLUMNS) {
+    const arrow = rankingSortCol === col.key ? (rankingSortAsc ? ' ▲' : ' ▼') : '';
+    html += `<th style="cursor:pointer;white-space:nowrap;" onclick="sortRanking('${col.key}')">${col.label}${arrow}</th>`;
+  }
+  html += '</tr></thead><tbody>';
+  sorted.forEach((d, i) => {
+    const rank = i + 1;
+    const cls = rank <= 3 ? `rank-${rank}` : 'rank-other';
+    html += `<tr><td><span class="rank-badge ${cls}">${rank}</span></td><td>${d.username}</td>`;
+    for (const col of RANKING_COLUMNS) {
+      html += `<td>${fmtK(d[col.key] || 0)}</td>`;
+    }
+    html += '</tr>';
+  });
+  html += '</tbody></table>';
+  document.getElementById('ranking-table').innerHTML = html;
 }
 
 // --- Drilldown ---
@@ -407,19 +450,17 @@ async function loadDrilldown() {
 // --- Tools & Skills ---
 async function loadToolStats() {
   try {
-    // Query events with tool_name grouped
     const params = getParams();
-    const url = `${API}/stats/tool-usage?${qs(params)}`;
-    const res = await fetch(url);
-    let toolData = [];
-    if (res.ok) {
-      toolData = await res.json();
-    }
 
-    const chart = echarts.init(document.getElementById('chart-tools'));
+    // ── Tool usage ──
+    const toolRes = await fetch(`${API}/stats/tool-usage?${qs(params)}`);
+    let toolData = [];
+    if (toolRes.ok) toolData = await toolRes.json();
+
+    const toolChart = echarts.init(document.getElementById('chart-tools'));
     if (toolData.length > 0) {
       const sorted = [...toolData].sort((a, b) => b.use_count - a.use_count).slice(0, 20);
-      chart.setOption({
+      toolChart.setOption({
         tooltip: {},
         grid: { left: 120, right: 20, top: 10, bottom: 20 },
         xAxis: { type: 'value' },
@@ -427,12 +468,46 @@ async function loadToolStats() {
         series: [{ type: 'bar', data: sorted.map(d => d.use_count).reverse(), itemStyle: { color: '#67c23a' } }],
       });
     } else {
-      chart.setOption({
+      toolChart.setOption({
         title: { text: 'No tool usage data', left: 'center', top: 'center', textStyle: { color: '#ccc' } },
       });
     }
 
-    // Event types
+    // ── Skill usage ──
+    const skillRes = await fetch(`${API}/stats/skill-usage?${qs(params)}`);
+    let skillData = [];
+    if (skillRes.ok) skillData = await skillRes.json();
+
+    const skillChart = echarts.init(document.getElementById('chart-skills'));
+    if (skillData.length > 0) {
+      const sorted = [...skillData].sort((a, b) => b.use_count - a.use_count).slice(0, 20);
+      skillChart.setOption({
+        tooltip: {},
+        grid: { left: 160, right: 20, top: 10, bottom: 20 },
+        xAxis: { type: 'value' },
+        yAxis: { type: 'category', data: sorted.map(d => d.name).reverse() },
+        series: [{ type: 'bar', data: sorted.map(d => d.use_count).reverse(), itemStyle: { color: '#e6a23c' } }],
+      });
+    } else {
+      skillChart.setOption({
+        title: { text: 'No skill usage data', left: 'center', top: 'center', textStyle: { color: '#ccc' } },
+      });
+    }
+
+    // ── Skill detail table ──
+    let skillHtml = '';
+    if (skillData.length > 0) {
+      skillHtml = `<table><thead><tr><th>Skill Name</th><th>Uses</th><th>Users</th><th>Sessions</th></tr></thead><tbody>`;
+      skillData.forEach(d => {
+        skillHtml += `<tr><td>${d.name}</td><td>${fmt(d.use_count)}</td><td>${fmt(d.user_count)}</td><td>${fmt(d.session_count)}</td></tr>`;
+      });
+      skillHtml += '</tbody></table>';
+    } else {
+      skillHtml = '<div style="padding:16px;color:#999;text-align:center;">No skill usage data</div>';
+    }
+    document.getElementById('skill-table').innerHTML = skillHtml;
+
+    // ── Event types ──
     const evtChart = echarts.init(document.getElementById('chart-event-types'));
     const evtData = await apiFetch('/stats/event-types');
     if (Array.isArray(evtData) && evtData.length > 0) {

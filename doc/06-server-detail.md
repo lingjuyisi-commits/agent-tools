@@ -96,6 +96,9 @@ agent-tools-server
     //   "password": "xxx"
     // }
   },
+  "dashboard": {
+    "rankingLimit": 100
+  },
   "retention": {
     "eventsDays": 90,
     "sessionsDays": 180
@@ -261,9 +264,12 @@ GET /api/v1/health
 Response 200:
 {
   "status": "ok",
-  "version": "1.0.0",
-  "database": "sqlite3",
-  "uptime": 3600
+  "version": "0.1.0",
+  "database": "better-sqlite3",
+  "uptime": 3600,
+  "dashboard": {
+    "rankingLimit": 100
+  }
 }
 ```
 
@@ -499,8 +505,8 @@ Dashboard (SPA)
 │   ├── Token消耗趋势图
 │   └── Agent分布饼图
 ├── 排名页
-│   ├── 排名指标选择器
-│   ├── 用户排名柱状图
+│   ├── 全指标表格（点击列头排序，展示 Token/会话/事件/文件/行数/Skill 等所有维度）
+│   ├── 用户排名柱状图（跟随排序列更新）
 │   └── 排名明细表格 (可展开下钻)
 ├── 用户详情页 (点击排名条目进入)
 │   ├── 用户KPI卡片
@@ -509,8 +515,9 @@ Dashboard (SPA)
 │   ├── Tool/Skill使用排名
 │   └── 会话列表
 └── Tool/Skill分析页
-    ├── Tool使用频率排名
-    ├── Skill使用频率排名
+    ├── Tool使用频率排名（排除 skill_use 事件）
+    ├── Skill使用频率排名（按 skill_name 聚合 + 明细表）
+    ├── 事件类型分布饼图
     └── 使用趋势
 ```
 

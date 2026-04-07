@@ -41,13 +41,17 @@
 ### Phase 4（已完成）
 
 - [x] Dashboard Drilldown Tab（用户/机器下钻，饼图 + 表格）
-- [x] Dashboard Tools Tab（工具使用频率柱状图 + 事件类型表格）
+- [x] Dashboard Tools & Skills Tab（工具/Skill 分别统计 + 事件类型饼图）
 - [x] `/api/v1/stats/drilldown` 接口
-- [x] `/api/v1/stats/tool-usage` 接口
+- [x] `/api/v1/stats/tool-usage` 接口（排除 skill_use 事件）
+- [x] `/api/v1/stats/skill-usage` 接口（按 skill_name 聚合，含使用次数/用户数/会话数）
+- [x] `/api/v1/stats/ranking-all` 接口（一次返回所有指标，前端排序）
 - [x] `/api/v1/stats/models` 和 `/api/v1/stats/event-types` 接口
 - [x] Skill 调用统计（斜线命令 + 模型发起的 Skill tool）
+- [x] Dashboard Ranking Tab 重构：展示所有指标列，点击列头排序
 - [x] Dashboard 自定义日期范围选择器（Custom period）
-- [x] GitHub Actions CI/CD（`ci.yml`、`publish-cli.yml`、`publish-server.yml`）
+- [x] GitHub Actions CI（`ci.yml`，push/PR 测试 + tag `v*` 触发 Release 打包）
+- [x] 服务器 dashboard 配置（`config.json` 中 `dashboard.rankingLimit`，通过 health API 传递给前端）
 
 ### Phase 5（待实现）
 
@@ -96,11 +100,11 @@
 | `server/src/routes/stats.js` | 所有 `GET /api/v1/stats/*` 路由 |
 | `server/src/routes/health.js` | `GET /api/v1/health` 路由 |
 | `server/src/services/event-service.js` | 批量写入 + event_id 去重 |
-| `server/src/services/stats-service.js` | 统计查询核心：`computeDateRange`、`applyFilters`、`getSummary`、`getRanking`、`getDrilldown`、`getTrend` |
+| `server/src/services/stats-service.js` | 统计查询核心：`computeDateRange`、`applyFilters`、`getSummary`、`getRanking`、`getRankingAll`、`getDrilldown`、`getTrend` |
 | `server/src/init-wizard.js` | 首次运行向导：交互式配置 SQLite / MySQL / PostgreSQL 和端口 |
 | `server/src/config.js` | 服务端配置管理（`~/.agent-tools-server/config.json`） |
 | `server/src/jobs/daily-aggregation.js` | 每日聚合 cron 任务（00:05 UTC 触发，写入 daily_stats / tool_usage_detail） |
-| `server/src/dashboard/index.html` | 单文件前端（ECharts CDN）：Overview / Ranking / Drilldown / Tools 四个 Tab |
+| `server/src/dashboard/index.html` | 单文件前端（ECharts CDN）：Overview / Ranking（全指标表格，列头排序） / Drilldown / Tools & Skills（分离展示） 四个 Tab |
 
 ---
 
