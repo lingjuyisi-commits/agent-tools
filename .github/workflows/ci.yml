@@ -63,16 +63,17 @@ jobs:
         run: node -e "require('./src/config'); require('./src/db'); require('./src/app'); console.log('Server modules OK')"
       - name: Test migrations (SQLite)
         working-directory: server
-        shell: node {0}
         run: |
-          const { createDb } = require('./src/db');
-          const os = require('os');
-          const path = require('path');
-          const db = createDb({ database: { client: 'better-sqlite3', connection: { filename: path.join(os.tmpdir(), 'test-ci.db') }, useNullAsDefault: true }});
-          db.migrate.latest({ directory: './migrations' })
-            .then(() => { console.log('Migrations OK'); return db.destroy(); })
-            .then(() => process.exit(0))
-            .catch(e => { console.error(e); process.exit(1); });
+          node -e "
+            const { createDb } = require('./src/db');
+            const os = require('os');
+            const path = require('path');
+            const db = createDb({ database: { client: 'better-sqlite3', connection: { filename: path.join(os.tmpdir(), 'test-ci.db') }, useNullAsDefault: true }});
+            db.migrate.latest({ directory: './migrations' })
+              .then(() => { console.log('Migrations OK'); return db.destroy(); })
+              .then(() => process.exit(0))
+              .catch(e => { console.error(e); process.exit(1); });
+          "
 
   release:
     name: Release
