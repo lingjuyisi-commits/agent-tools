@@ -88,7 +88,11 @@ jobs:
         run: npm pack
       - name: Rename CLI tarball
         working-directory: cli
-        run: mv *.tgz agent-tools-cli-${{ steps.version.outputs.version }}.tgz
+        run: |
+          for f in *.tgz; do
+            target="agent-tools-cli-${{ steps.version.outputs.version }}.tgz"
+            [ "$f" = "$target" ] || mv "$f" "$target"
+          done
 
       # ── Server ──
       - run: npm install --ignore-scripts --omit=dev
@@ -101,7 +105,11 @@ jobs:
         run: npm pack
       - name: Rename Server tarball
         working-directory: server
-        run: mv *.tgz agent-tools-server-${{ steps.version.outputs.version }}.tgz
+        run: |
+          for f in *.tgz; do
+            target="agent-tools-server-${{ steps.version.outputs.version }}.tgz"
+            [ "$f" = "$target" ] || mv "$f" "$target"
+          done
 
       # ── Create Release ──
       - name: Create GitHub Release
