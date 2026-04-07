@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# pnpm
+.pnpm-store/
+
+# Native addons (compiled per-platform, not portable)
+src/**/*.node
+build/
+prebuilds/
+
+# Local SQLite data (runtime, not source)
+*.db
+*.db-shm
+*.db-wal
+
+# User config dirs (runtime)
+.agent-tools/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+
+# Environment
+.env
+.env.local
+
+# Test artifacts
+coverage/
+.nyc_output/

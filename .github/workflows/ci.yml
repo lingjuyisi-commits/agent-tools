@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  test-cli:
+    name: Test CLI
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node-version: [18.x, 20.x]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'pnpm'
+          cache-dependency-path: cli/pnpm-lock.yaml
+      - run: pnpm install --ignore-scripts
+        working-directory: cli
+      - run: pnpm rebuild better-sqlite3
+        working-directory: cli
+      - name: Test modules load
+        working-directory: cli
+        run: node -e "require('./src/utils/config'); require('./src/detector'); require('./src/collector/local-store'); console.log('CLI modules OK')"
+      - name: Test CLI help
+        working-directory: cli
+        run: node bin/cli.js --help
+
+  test-server:
+    name: Test Server
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        node-version: [18.x, 20.x]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'pnpm'
+          cache-dependency-path: server/pnpm-lock.yaml
+      - run: pnpm install --ignore-scripts
+        working-directory: server
+      - run: pnpm rebuild better-sqlite3
+        working-directory: server
+      - name: Test modules load
+        working-directory: server
+        run: node -e "require('./src/config'); require('./src/db'); require('./src/app'); console.log('Server modules OK')"
+      - name: Test migrations (SQLite)
+        working-directory: server
+        shell: node {0}
+        run: |
+          const { createDb } = require('./src/db');
+          const os = require('os');
+          const path = require('path');
+          const db = createDb({ database: { client: 'better-sqlite3', connection: { filename: path.join(os.tmpdir(), 'test-ci.db') }, useNullAsDefault: true }});
+          db.migrate.latest({ directory: './migrations' })
+            .then(() => { console.log('Migrations OK'); return db.destroy(); })
+            .then(() => process.exit(0))
+            .catch(e => { console.error(e); process.exit(1); });

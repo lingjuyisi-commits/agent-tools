@@ -1,0 +1,71 @@
+name: Publish CLI (agent-tools)
+
+on:
+  push:
+    tags:
+      - 'cli-v*'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [18.x, 20.x, 22.x]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: 'pnpm'
+          cache-dependency-path: cli/pnpm-lock.yaml
+      - run: pnpm install --ignore-scripts
+        working-directory: cli
+      - run: pnpm rebuild better-sqlite3
+        working-directory: cli
+      - name: Smoke test - module loading
+        working-directory: cli
+        run: |
+          node -e "require('./src/utils/config'); require('./src/detector'); require('./src/collector/local-store'); require('./src/collector/uploader'); require('./src/collector/event-normalizer'); require('./src/hooks/adapters/claude-code'); require('./src/hooks/adapters/codebuddy'); console.log('All modules OK')"
+      - name: Smoke test - CLI help
+        working-directory: cli
+        run: node bin/cli.js --help
+
+  publish:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'pnpm'
+          cache-dependency-path: cli/pnpm-lock.yaml
+      - run: pnpm install --ignore-scripts --prod
+        working-directory: cli
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#cli-v}" >> $GITHUB_OUTPUT
+      - name: Update package version
+        working-directory: cli
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = '${{ steps.version.outputs.version }}';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+      - name: Publish to npm
+        working-directory: cli
+        run: pnpm publish --no-git-checks --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

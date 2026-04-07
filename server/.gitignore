@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# pnpm
+.pnpm-store/
+
+# Native addons
+*.node
+build/
+prebuilds/
+
+# Runtime databases and server config (not source)
+*.db
+*.db-shm
+*.db-wal
+.agent-tools-server/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+
+# Environment (contains DB passwords etc.)
+.env
+.env.local
+.env.production
+
+# Test artifacts
+coverage/
+.nyc_output/
+/tmp/

@@ -1,4 +1,38 @@
+# Dependencies
 node_modules/
-*.db
+
+# Package manager
+.pnpm-store/
+
+# Runtime data (user home dirs — never commit)
 .agent-tools/
 .agent-tools-server/
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Build output
+dist/
+build/
