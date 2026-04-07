@@ -2,18 +2,19 @@
 
 ## 1. 主流CLI编程Agent概览
 
-| Agent | 安装方式 | 配置格式 | Hook系统 | MCP支持 | 会话存储 |
-|-------|---------|---------|----------|---------|---------|
-| Claude Code | npm | JSON (`.claude/`) | 21个生命周期事件 | 完整支持 | JSONL + telemetry |
-| CodeBuddy (腾讯) | 腾讯云分发 | JSON (`.codebuddy/`) | PreToolUse/PostToolUse | 支持 | 本地聊天历史 |
-| OpenCode | Go binary | JSON (`opencode.json`) | JS/TS插件系统 | 支持 | SQLite |
-| Aider | pip | YAML (`.aider.conf.yml`) | 无内置hook | 不支持 | Markdown历史文件 |
-| GitHub Copilot CLI | gh extension | JSON (`.github/hooks/`) | 6个事件 | 支持 | GitHub托管 |
-| Cursor CLI | 随IDE安装 | JSON (`.cursor/`) | Pre/Post tool hooks | 完整支持 | IDE内部管理 |
-| Continue CLI | npm | YAML (`config.yaml`) | onPreToolUse/onPostToolUse | 完整支持 | 本地 |
-| Amazon Q CLI | brew/aws installer | JSON (`.amazonq/`) | Agent hooks | 支持 | AWS托管 |
-| Cline CLI | npm | VS Code配置 | 无文档化hook | 支持(VS Code) | VS Code内部 |
-| Roo Code CLI | npm | VS Code配置 | 无文档化hook | 支持(VS Code) | VS Code内部 |
+> **优先支持范围：** Claude Code、CodeBuddy（Phase 1/2），其余Agent后续扩展。
+
+| Agent | 安装方式 | 配置格式 | Hook系统 | MCP支持 | 会话存储 | 优先级 |
+|-------|---------|---------|----------|---------|---------|--------|
+| **Claude Code** | npm | JSON (`.claude/`) | 21个生命周期事件 | 完整支持 | JSONL + telemetry | **P0** |
+| **CodeBuddy (腾讯)** | 腾讯云分发 | JSON (`.codebuddy/`) | PreToolUse/PostToolUse | 支持 | 本地聊天历史 | **P0** |
+| OpenCode | Go binary | JSON (`opencode.json`) | JS/TS插件系统 | 支持 | SQLite | P1 |
+| GitHub Copilot CLI | gh extension | JSON (`.github/hooks/`) | 6个事件 | 支持 | GitHub托管 | P1 |
+| Cursor CLI | 随IDE安装 | JSON (`.cursor/`) | Pre/Post tool hooks | 完整支持 | IDE内部管理 | P1 |
+| Continue CLI | npm | YAML (`config.yaml`) | onPreToolUse/onPostToolUse | 完整支持 | 本地 | P2 |
+| Amazon Q CLI | brew/aws installer | JSON (`.amazonq/`) | Agent hooks | 支持 | AWS托管 | P2 |
+| Cline CLI | npm | VS Code配置 | 无文档化hook | 支持(VS Code) | VS Code内部 | P2 |
+| Roo Code CLI | npm | VS Code配置 | 无文档化hook | 支持(VS Code) | VS Code内部 | P2 |
 
 ## 2. 各Agent详细配置
 
@@ -70,17 +71,7 @@
 
 **会话存储：** SQLite数据库
 
-### 2.4 Aider
-
-**配置文件：** `.aider.conf.yml`（home目录或git根目录），`.env`文件（`AIDER_xxx`前缀）
-
-**Hook系统：** 无内置hook/插件系统，仅支持git pre-commit hooks
-
-**会话存储：** Git-based，聊天历史存储于 `.aider.chat.history.md` 和 `.aider.input.history`
-
-**MCP：** 不原生支持
-
-### 2.5 GitHub Copilot CLI
+### 2.4 GitHub Copilot CLI
 
 **配置文件：** `.github/hooks/hooks.json`（per-repo），JSON格式
 
@@ -133,4 +124,4 @@
 2. **MCP是最通用的集成协议**：8/9的Agent支持MCP，可作为统一接口层
 3. **配置结构高度相似**：Claude Code和CodeBuddy几乎一致的配置模式，说明业界在趋同
 4. **没有现成的跨工具统计方案**：当前市场上不存在成熟的跨AI编程工具统计聚合开源项目
-5. **Aider是个特例**：无hook、无MCP，需通过解析其历史文件或包装命令实现数据采集
+5. **Claude Code和CodeBuddy配置结构几乎一致**：可复用大部分适配器逻辑，作为首批支持的Agent最为合理

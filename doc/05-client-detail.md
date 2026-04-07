@@ -8,55 +8,94 @@
 # 安装
 npm install -g agent-tools
 
-# 自动检测并配置（安装后自动运行一次，也可手动执行）
+# 首次初始化 - 指定服务器地址（必须先执行）
+agent-tools init
+# 交互式向导:
+#   ? Server URL: (http://localhost:3000)
+#   ? Confirm: y
+# 或非交互模式:
+agent-tools init --server http://localhost:3000
+agent-tools init --server https://stats.company.com:8080
+
+# 自动检测并配置Agent（向用户级settings.json注入hooks）
 agent-tools setup [--force] [--agent=claude-code,codebuddy]
 
 # 查看检测到的Agent
 agent-tools agents
 
-# 本地统计（离线可用）
+# 本地统计（离线可用，数据存储在~/.agent-tools/data/）
 agent-tools stats [--period=day|week|month] [--model=xxx] [--date=2026-04-07]
 
 # 手动触发上报
 agent-tools sync
 
-# 配置服务器地址等
-agent-tools config set server.url https://your-server.com
-agent-tools config set server.apiKey xxx
-agent-tools config get server.url
-
-# 查看当前状态
+# 查看当前配置和状态
 agent-tools status
 ```
 
-### 1.2 setup命令流程
+### 1.2 init命令流程（首次安装必须）
+
+```
+agent-tools init [--server <url>]
+  │
+  ├─ 1. 创建 ~/.agent-tools/ 目录结构
+  │     ├─ config.json
+  │     └─ data/
+  │
+  ├─ 2. 交互式询问或从参数获取:
+  │     └─ 服务器地址 (默认 http://localhost:3000)
+  │
+  ├─ 3. 测试服务器连通性 (GET /api/v1/health)
+  │     ├─ 成功: 保存配置
+  │     └─ 失败: 警告但仍保存(支持离线先配置)
+  │
+  └─ 4. 自动触发 setup 流程
+```
+
+**~/.agent-tools/config.json 示例：**
+```json
+{
+  "server": {
+    "url": "http://localhost:3000"
+  },
+  "sync": {
+    "batchSize": 100,
+    "intervalSeconds": 300
+  },
+  "initialized": true,
+  "initTime": "2026-04-07T10:00:00Z"
+}
+```
+
+### 1.3 setup命令流程
 
 ```
 agent-tools setup
   │
+  ├─ 0. 检查是否已init，未init则提示先执行init
+  │
   ├─ 1. 检测平台 (darwin/linux/win32)
   │
-  ├─ 2. 扫描已安装的编程Agent
+  ├─ 2. 扫描已安装的编程Agent (当前: Claude Code + CodeBuddy)
   │     ├─ 检查CLI命令 (which/where)
-  │     ├─ 检查配置目录是否存在
+  │     ├─ 检查用户级配置目录是否存在
   │     └─ 输出检测结果列表
   │
   ├─ 3. 对每个检测到的Agent:
-  │     ├─ 读取现有配置文件
+  │     ├─ 读取用户级配置文件 (~/.claude/settings.json 等)
   │     ├─ 检查是否已配置agent-tools hooks
   │     ├─ 生成hook配置(使用模板)
   │     ├─ 合并到现有配置(不覆盖用户已有hooks)
-  │     └─ 写入配置文件
+  │     └─ 写入用户级配置文件
   │
   ├─ 4. 配置MCP Server(对支持MCP的Agent)
   │
   └─ 5. 输出配置摘要
        ├─ 已配置的Agent列表
-       ├─ 需要手动配置的Agent(如Aider)
        └─ 服务器连接状态
 ```
 
-### 1.3 配置合并策略
+### 1.4 配置合并策略
 
 **核心原则：不破坏用户现有配置**
 
@@ -237,10 +276,22 @@ function adaptCopilot(eventType, raw) {
 
 ## 3. 本地存储设计
 
-### 3.1 SQLite Schema
+### 3.1 本地数据目录
+
+所有客户端数据存放于用户目录 `~/.agent-tools/data/` 下：
+
+```
+~/.agent-tools/
+├── config.json                    # 客户端配置
+└── data/
+    └── local.db                   # SQLite (事件缓存 + 本地统计)
+```
+
+### 3.2 SQLite Schema
 
 ```sql
--- 客户端本地SQLite，用于离线缓存和本地查询
+-- 客户端本地SQLite (~/.agent-tools/data/local.db)
+-- 用于离线缓存和本地统计查询
 CREATE TABLE local_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   event_id TEXT UNIQUE NOT NULL,
@@ -254,19 +305,21 @@ CREATE INDEX idx_synced ON local_events(synced, created_at);
 CREATE INDEX idx_created ON local_events(created_at);
 ```
 
-### 3.2 上报策略
+### 3.3 上报策略
 
 ```javascript
 class Uploader {
-  constructor(config) {
-    this.batchSize = 100;        // 每批最大条数
-    this.syncInterval = 5 * 60;  // 5分钟
-    this.serverUrl = config.serverUrl;
-    this.apiKey = config.apiKey;
+  constructor() {
+    // 从 ~/.agent-tools/config.json 读取配置
+    const config = loadConfig();
+    this.batchSize = config.sync?.batchSize || 100;
+    this.syncInterval = config.sync?.intervalSeconds || 300;
+    this.serverUrl = config.server?.url || 'http://localhost:3000';
+    // 上报接口无需鉴权
   }
 
   async checkAndSync() {
-    const store = new LocalStore();
+    const store = new LocalStore();  // 读写 ~/.agent-tools/data/local.db
     const unsyncedCount = await store.getUnsyncedCount();
     const lastSync = await store.getLastSyncTime();
     const elapsed = (Date.now() - lastSync) / 1000;
@@ -284,10 +337,8 @@ class Uploader {
     try {
       const response = await fetch(`${this.serverUrl}/api/v1/events/batch`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-API-Key': this.apiKey,
-        },
+        headers: { 'Content-Type': 'application/json' },
+        // 无需Authorization header
         body: JSON.stringify({ events }),
       });
       
@@ -310,17 +361,18 @@ class Uploader {
 const os = require('os');
 const path = require('path');
 
-function getAgentConfigPath(agent) {
+// agent-tools自身数据目录
+const AGENT_TOOLS_HOME = path.join(os.homedir(), '.agent-tools');
+const AGENT_TOOLS_CONFIG = path.join(AGENT_TOOLS_HOME, 'config.json');
+const AGENT_TOOLS_DB = path.join(AGENT_TOOLS_HOME, 'data', 'local.db');
+
+// 各Agent的用户级配置文件路径
+function getAgentUserConfigPath(agent) {
   const home = os.homedir();
   
   const paths = {
     'claude-code': path.join(home, '.claude', 'settings.json'),
     'codebuddy': path.join(home, '.codebuddy', 'settings.json'),
-    'opencode': path.join(home, '.config', 'opencode', 'opencode.json'),
-    'copilot-cli': null, // 项目级配置，无全局
-    'cursor': path.join(home, '.cursor', 'hooks.json'),
-    'continue': path.join(home, '.continue', 'config.yaml'),
-    'amazon-q': path.join(home, '.aws', 'amazonq', 'default.json'),
   };
   
   return paths[agent];
@@ -348,19 +400,16 @@ function getUserInfo() {
 ```javascript
 #!/usr/bin/env node
 // scripts/postinstall.js
-// 轻量级：仅检测和提示，不修改配置
+// 检测已安装Agent并提示执行init
 
 const { execSync } = require('child_process');
 const os = require('os');
+const fs = require('fs');
+const path = require('path');
 
 const agents = [
   { name: 'Claude Code', cmd: 'claude' },
   { name: 'CodeBuddy', cmd: 'codebuddy' },
-  { name: 'OpenCode', cmd: 'opencode' },
-  { name: 'GitHub Copilot CLI', cmd: 'gh' },
-  { name: 'Cursor', cmd: 'cursor' },
-  { name: 'Amazon Q', cmd: 'amazon-q' },
-  { name: 'Aider', cmd: 'aider' },
 ];
 
 function isInstalled(cmd) {
@@ -378,9 +427,16 @@ const detected = agents.filter(a => isInstalled(a.cmd));
 if (detected.length > 0) {
   console.log('  Detected:');
   detected.forEach(a => console.log(`    + ${a.name}`));
-  console.log('\n  Run "agent-tools setup" to configure hooks automatically.\n');
 } else {
-  console.log('  No AI coding agents detected in PATH.');
-  console.log('  Install one and run "agent-tools setup" when ready.\n');
+  console.log('  No supported AI coding agents detected in PATH.');
+}
+
+// 检查是否已初始化
+const configPath = path.join(os.homedir(), '.agent-tools', 'config.json');
+if (fs.existsSync(configPath)) {
+  console.log('\n  Already initialized. Run "agent-tools setup" to update hooks.\n');
+} else {
+  console.log('\n  Run "agent-tools init" to initialize (set server address).');
+  console.log('  For local development: agent-tools init --server http://localhost:3000\n');
 }
 ```
