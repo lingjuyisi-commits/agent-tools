@@ -11,6 +11,22 @@ program
   .version(pkg.version);
 
 program
+  .command('version')
+  .description('显示当前 CLI 版本号')
+  .action(() => {
+    console.log(`agent-tools v${pkg.version}`);
+  });
+
+program
+  .command('check-update')
+  .description('检查 CLI 更新并自动安装')
+  .option('--check-only', '仅检查，不安装', false)
+  .action(async (options) => {
+    const { runCheckUpdate } = require('../src/cli/check-update');
+    await runCheckUpdate(options);
+  });
+
+program
   .command('init')
   .description('First-time setup — configure server URL and create local data directory')
   .option('--server <url>', 'Server URL (skip interactive prompt)')

@@ -5,6 +5,12 @@
   "bin": {
     "agent-tools-server": "./bin/server.js"
   },
+  "files": [
+    "bin/",
+    "src/",
+    "dist/",
+    "migrations/"
+  ],
   "scripts": {
     "start": "node bin/server.js",
     "migrate": "knex migrate:latest"
@@ -16,6 +22,7 @@
     "fastify": "^5.0.0",
     "inquirer": "^12.0.0",
     "knex": "^3.1.0",
-    "node-cron": "^3.0.0"
+    "node-cron": "^3.0.0",
+    "tar": "^7.0.0"
   }
 }

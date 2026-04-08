@@ -4,6 +4,7 @@ const {
   getRankingAll,
   getDrilldown,
   getTrend,
+  getRankingTrend,
   computeDateRange
 } = require('../services/stats-service');
 
@@ -87,6 +88,21 @@ async function statsRoutes(fastify, opts) {
     if (request.query.user) query.where('username', request.query.user);
 
     return query;
+  });
+
+  // Ranking trend (metrics aggregated by time bucket)
+  fastify.get('/api/v1/stats/ranking-trend', async (request, reply) => {
+    const result = await getRankingTrend(db, request.query);
+    return result;
+  });
+
+  // Dashboard helper: list distinct agents
+  fastify.get('/api/v1/stats/agents', async (request, reply) => {
+    const rows = await db('events')
+      .distinct('agent')
+      .whereNotNull('agent')
+      .orderBy('agent');
+    return rows;
   });
 
   // Dashboard helper: skill usage frequency (by skill_name)

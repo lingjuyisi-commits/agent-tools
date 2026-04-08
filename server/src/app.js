@@ -20,6 +20,7 @@ function buildApp(db, config) {
   app.register(require('./routes/health'), { config });
   app.register(require('./routes/events'), { db });
   app.register(require('./routes/stats'), { db });
+  app.register(require('./routes/client'));
 
   return app;
 }

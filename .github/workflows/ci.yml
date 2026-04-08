@@ -94,6 +94,22 @@ jobs:
             [ "$f" = "$target" ] || mv "$f" "$target"
           done
 
+      # ── Embed CLI tgz in Server + generate version manifest ──
+      - name: Embed CLI tgz in server
+        run: |
+          mkdir -p server/dist
+          cp cli/agent-tools-cli-${{ steps.version.outputs.version }}.tgz server/dist/agent-tools-cli.tgz
+
+      - name: Generate client-version.json
+        run: |
+          RELEASED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          cat > server/src/client-version.json << EOF
+          {
+            "version": "${{ steps.version.outputs.version }}",
+            "releasedAt": "$RELEASED_AT"
+          }
+          EOF
+
       # ── Server ──
       - run: npm install --ignore-scripts --omit=dev
         working-directory: server

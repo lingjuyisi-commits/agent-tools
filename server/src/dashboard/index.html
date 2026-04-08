@@ -32,10 +32,10 @@
 
     .ranking-section { padding: 0 24px 24px; }
     .ranking-section h3 { font-size: 14px; color: #555; margin-bottom: 12px; }
-    .ranking-table { width: 100%; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow: hidden; }
+    .ranking-table { width: 100%; background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow-x: auto; }
     .ranking-table table { width: 100%; border-collapse: collapse; }
-    .ranking-table th { background: #f8f9fa; padding: 10px 16px; text-align: left; font-size: 12px; color: #666; text-transform: uppercase; border-bottom: 1px solid #eee; }
-    .ranking-table td { padding: 10px 16px; font-size: 13px; border-bottom: 1px solid #f0f0f0; }
+    .ranking-table th { background: #f8f9fa; padding: 10px 16px; text-align: left; font-size: 12px; color: #666; border-bottom: 1px solid #eee; white-space: nowrap; }
+    .ranking-table td { padding: 10px 16px; font-size: 13px; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
     .ranking-table tr:hover td { background: #f8f9ff; }
     .rank-badge { display: inline-block; width: 24px; height: 24px; line-height: 24px; text-align: center; border-radius: 50%; font-size: 12px; font-weight: 700; }
     .rank-1 { background: #ffd700; color: #333; }
@@ -58,6 +58,9 @@
     .loading { text-align: center; padding: 40px; color: #999; }
     .error { text-align: center; padding: 20px; color: #e74c3c; }
 
+    .user-link { cursor: pointer; color: #4a90d9; text-decoration: underline; }
+    .user-link:hover { color: #357abd; }
+
     @media (max-width: 768px) {
       .charts-grid { grid-template-columns: 1fr; }
       .kpi-row { grid-template-columns: repeat(2, 1fr); }
@@ -67,92 +70,99 @@
 <body>
   <div class="header">
     <h1>Agent Tools Dashboard</h1>
-    <div class="status" id="server-status">Loading...</div>
+    <div style="display:flex;align-items:center;gap:16px;">
+      <a id="client-download" href="/api/v1/client/download" style="display:none;color:#8fc;font-size:13px;text-decoration:underline;">下载客户端</a>
+      <div class="status" id="server-status">加载中...</div>
+    </div>
   </div>
 
   <div class="controls">
     <div>
-      <label>Period:</label>
+      <label>统计周期：</label>
       <select id="period">
-        <option value="day">Day</option>
-        <option value="week" selected>Week</option>
-        <option value="month">Month</option>
-        <option value="custom">Custom</option>
-        <option value="all">All</option>
+        <option value="day" selected>按日</option>
+        <option value="week">按周</option>
+        <option value="month">按月</option>
+        <option value="custom">自定义</option>
       </select>
     </div>
-    <div>
-      <label>Date:</label>
+    <div id="single-date">
+      <label>日期：</label>
       <input type="date" id="date" />
     </div>
     <div id="custom-range" style="display:none">
-      <label>From:</label>
+      <label>开始：</label>
       <input type="date" id="start" />
-      <label>To:</label>
+      <label>结束：</label>
       <input type="date" id="end" />
     </div>
     <div>
-      <label>Model:</label>
-      <select id="model-filter">
-        <option value="">All Models</option>
+      <label>Agent：</label>
+      <select id="agent-filter">
+        <option value="">所有 Agent</option>
       </select>
     </div>
-    <button onclick="refreshAll()">Refresh</button>
+    <div>
+      <label>模型：</label>
+      <select id="model-filter">
+        <option value="">所有模型</option>
+      </select>
+    </div>
+    <button onclick="refreshAll()">刷新</button>
   </div>
 
   <div class="tab-bar">
-    <button class="active" onclick="switchTab('overview')">Overview</button>
-    <button onclick="switchTab('ranking')">Ranking</button>
-    <button onclick="switchTab('drilldown')">Drilldown</button>
-    <button onclick="switchTab('tools')">Tools & Skills</button>
+    <button id="btn-overview" class="active" onclick="switchTab('overview')">概览</button>
+    <button id="btn-ranking" onclick="switchTab('ranking')">排名</button>
+    <button id="btn-drilldown" onclick="switchTab('drilldown')">钻取</button>
+    <button id="btn-tools" onclick="switchTab('tools')">工具与技能</button>
   </div>
 
-  <!-- Overview Tab -->
+  <!-- 概览 Tab -->
   <div id="tab-overview" class="tab-content active">
     <div class="kpi-row" id="kpi-row"></div>
     <div class="charts-grid">
       <div class="chart-card">
-        <h3>Token Consumption Trend</h3>
+        <h3>Token 消耗趋势</h3>
         <div id="chart-token-trend" class="chart-container"></div>
       </div>
       <div class="chart-card">
-        <h3>Agent Distribution</h3>
+        <h3>Agent 分布</h3>
         <div id="chart-agent-dist" class="chart-container"></div>
       </div>
     </div>
   </div>
 
-  <!-- Ranking Tab -->
+  <!-- 排名 Tab -->
   <div id="tab-ranking" class="tab-content">
     <div class="ranking-section" style="padding-top:16px;">
-      <div class="charts-grid">
-        <div class="chart-card">
-          <h3>User Ranking</h3>
-          <div id="chart-ranking" class="chart-container"></div>
-        </div>
+      <div class="chart-card" style="margin:0 0 16px;">
+        <h3>指标趋势（归一化）</h3>
+        <div id="chart-ranking-trend" class="chart-container" style="height:360px;"></div>
       </div>
+      <h3>用户排名 <span style="font-weight:normal;font-size:12px;color:#999;">（点击用户名可钻取详情）</span></h3>
       <div class="ranking-table" id="ranking-table"></div>
     </div>
   </div>
 
-  <!-- Drilldown Tab -->
+  <!-- 钻取 Tab -->
   <div id="tab-drilldown" class="tab-content">
     <div class="drilldown-section">
       <div style="display:flex;align-items:center;gap:16px;margin:16px 0;">
-        <label>User:</label>
+        <label>用户：</label>
         <select id="drilldown-user" onchange="loadDrilldown()">
-          <option value="">Select user...</option>
+          <option value="">选择用户...</option>
         </select>
-        <label>Group by:</label>
+        <label>分组方式：</label>
         <select id="drilldown-by" onchange="loadDrilldown()">
-          <option value="hostname">Hostname</option>
+          <option value="hostname">主机名</option>
           <option value="agent">Agent</option>
-          <option value="model">Model</option>
+          <option value="model">模型</option>
         </select>
       </div>
       <div class="charts-grid">
         <div class="chart-card">
-          <h3>Drilldown Chart</h3>
+          <h3>钻取图表</h3>
           <div id="chart-drilldown" class="chart-container"></div>
         </div>
         <div class="ranking-table" id="drilldown-table"></div>
@@ -160,25 +170,25 @@
     </div>
   </div>
 
-  <!-- Tools Tab -->
+  <!-- 工具与技能 Tab -->
   <div id="tab-tools" class="tab-content">
     <div class="charts-grid" style="padding-top:16px;">
       <div class="chart-card">
-        <h3>Tool Usage Frequency</h3>
+        <h3>工具使用频率</h3>
         <div id="chart-tools" class="chart-container"></div>
       </div>
       <div class="chart-card">
-        <h3>Skill Usage Frequency</h3>
+        <h3>Skill 使用频率</h3>
         <div id="chart-skills" class="chart-container"></div>
       </div>
     </div>
     <div class="ranking-section">
-      <h3>Skill Usage Details</h3>
+      <h3>Skill 使用详情</h3>
       <div class="ranking-table" id="skill-table"></div>
     </div>
     <div class="charts-grid">
       <div class="chart-card">
-        <h3>Event Type Distribution</h3>
+        <h3>事件类型分布</h3>
         <div id="chart-event-types" class="chart-container"></div>
       </div>
     </div>
@@ -186,26 +196,47 @@
 
 <script>
 const API = '/api/v1';
+let activeTab = 'overview';
+let RANKING_LIMIT = 100;
 
-// --- Init ---
+// ===== 初始化 =====
 document.getElementById('date').valueAsDate = new Date();
+
 document.getElementById('period').addEventListener('change', function() {
-  document.getElementById('custom-range').style.display = this.value === 'custom' ? 'flex' : 'none';
+  const isCustom = this.value === 'custom';
+  document.getElementById('single-date').style.display = isCustom ? 'none' : '';
+  document.getElementById('custom-range').style.display = isCustom ? 'flex' : 'none';
+  if (isCustom) {
+    const d = document.getElementById('date').value;
+    if (!document.getElementById('start').value) document.getElementById('start').value = d;
+    if (!document.getElementById('end').value) document.getElementById('end').value = d;
+  } else {
+    // 从自定义切回时，取开始日期作为单日期
+    const s = document.getElementById('start').value;
+    if (s && !document.getElementById('date').value) {
+      document.getElementById('date').value = s;
+    }
+  }
 });
 
 checkServerStatus();
+loadFilterOptions();
 refreshAll();
 
+// ===== 参数构建 =====
 function getParams() {
   const p = { period: document.getElementById('period').value };
-  const d = document.getElementById('date').value;
-  if (d) p.date = d;
   if (p.period === 'custom') {
     p.start = document.getElementById('start').value;
     p.end = document.getElementById('end').value;
+  } else {
+    const d = document.getElementById('date').value;
+    if (d) p.date = d;
   }
   const model = document.getElementById('model-filter').value;
   if (model) p.model = model;
+  const agent = document.getElementById('agent-filter').value;
+  if (agent) p.agent = agent;
   return p;
 }
 
@@ -224,43 +255,75 @@ async function apiFetch(path, extraParams = {}) {
 async function checkServerStatus() {
   try {
     const data = await fetch(`${API}/health`).then(r => r.json());
-    document.getElementById('server-status').textContent = `DB: ${data.database} | Uptime: ${Math.round(data.uptime)}s`;
+    document.getElementById('server-status').textContent = `DB: ${data.database} | v${data.version} | 运行: ${Math.round(data.uptime)}s`;
     if (data.dashboard && data.dashboard.rankingLimit) {
       RANKING_LIMIT = data.dashboard.rankingLimit;
     }
   } catch {
-    document.getElementById('server-status').textContent = 'Server unreachable';
+    document.getElementById('server-status').textContent = '服务器不可达';
     document.getElementById('server-status').style.color = '#f88';
   }
+  // Client download link
+  try {
+    const clientInfo = await fetch(`${API}/client/version`).then(r => r.json());
+    if (clientInfo.version && clientInfo.version !== '0.0.0-dev') {
+      const link = document.getElementById('client-download');
+      link.textContent = `下载客户端 v${clientInfo.version}`;
+      link.style.display = '';
+    }
+  } catch {}
 }
 
-// --- Tabs ---
+// ===== 筛选项加载（仅初始化时调用一次） =====
+async function loadFilterOptions() {
+  try {
+    const [models, agents] = await Promise.all([
+      fetch(`${API}/stats/models`).then(r => r.ok ? r.json() : []),
+      fetch(`${API}/stats/agents`).then(r => r.ok ? r.json() : []),
+    ]);
+    const mSel = document.getElementById('model-filter');
+    mSel.innerHTML = '<option value="">所有模型</option>';
+    models.forEach(m => { if (m.model) mSel.innerHTML += `<option value="${m.model}">${m.model}</option>`; });
+
+    const aSel = document.getElementById('agent-filter');
+    aSel.innerHTML = '<option value="">所有 Agent</option>';
+    agents.forEach(a => { if (a.agent) aSel.innerHTML += `<option value="${a.agent}">${a.agent}</option>`; });
+  } catch {}
+}
+
+// ===== Tabs =====
 function switchTab(name) {
+  activeTab = name;
   document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
   document.querySelectorAll('.tab-bar button').forEach(b => b.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
-  event.target.classList.add('active');
+  document.getElementById('btn-' + name).classList.add('active');
+  loadTabData(name);
+}
 
+function loadTabData(name) {
   if (name === 'ranking') loadRanking();
-  if (name === 'drilldown') loadDrilldown();
+  if (name === 'drilldown') { loadDrilldownUsers(); loadDrilldown(); }
   if (name === 'tools') loadToolStats();
 }
 
-// --- Refresh All ---
+// ===== 刷新（不重建筛选项，只刷新数据） =====
 async function refreshAll() {
-  await Promise.all([loadSummary(), loadTrend(), loadModels(), loadUserList()]);
+  loadSummary();
+  loadTrend();
+  loadTabData(activeTab);
 }
 
-// --- KPI Cards ---
+// ===== KPI 卡片 =====
 async function loadSummary() {
   try {
     const data = await apiFetch('/stats/summary');
     const kpis = [
-      { label: 'Users', value: fmt(data.user_count), sub: `${fmt(data.host_count)} hosts` },
-      { label: 'Sessions', value: fmt(data.session_count), sub: `${fmt(data.event_count)} events` },
-      { label: 'Token Total', value: fmtK(data.token_total), sub: `In: ${fmtK(data.token_input_total)} / Out: ${fmtK(data.token_output_total)}` },
-      { label: 'Files Created', value: fmt(data.files_created_total), sub: `Modified: ${fmt(data.files_modified_total)}` },
-      { label: 'Lines Added', value: fmt(data.lines_added_total), sub: `Removed: ${fmt(data.lines_removed_total)}` },
+      { label: '用户数', value: fmt(data.user_count), sub: `${fmt(data.host_count)} 台主机` },
+      { label: '会话数', value: fmt(data.session_count), sub: `${fmt(data.event_count)} 事件` },
+      { label: 'Token 合计', value: fmtK(data.token_total), sub: `输入: ${fmtK(data.token_input_total)} / 输出: ${fmtK(data.token_output_total)}` },
+      { label: '创建文件', value: fmt(data.files_created_total), sub: `修改: ${fmt(data.files_modified_total)}` },
+      { label: '新增行数', value: fmt(data.lines_added_total), sub: `删除: ${fmt(data.lines_removed_total)}` },
     ];
     document.getElementById('kpi-row').innerHTML = kpis.map(k => `
       <div class="kpi-card">
@@ -274,78 +337,167 @@ async function loadSummary() {
   }
 }
 
-// --- Token Trend ---
+// ===== Token 趋势 =====
 async function loadTrend() {
   try {
     const data = await apiFetch('/stats/trend');
     const chart = echarts.init(document.getElementById('chart-token-trend'));
     chart.setOption({
       tooltip: { trigger: 'axis' },
-      legend: { data: ['Input', 'Output', 'Total'], bottom: 0 },
+      legend: { data: ['输入', '输出', '合计'], bottom: 0 },
       grid: { left: 60, right: 20, top: 10, bottom: 40 },
       xAxis: { type: 'category', data: data.map(d => d.date) },
       yAxis: { type: 'value', axisLabel: { formatter: v => fmtK(v) } },
       series: [
-        { name: 'Input', type: 'bar', stack: 'token', data: data.map(d => d.token_input_total), itemStyle: { color: '#4a90d9' } },
-        { name: 'Output', type: 'bar', stack: 'token', data: data.map(d => d.token_output_total), itemStyle: { color: '#67c23a' } },
-        { name: 'Total', type: 'line', data: data.map(d => d.token_total), itemStyle: { color: '#e6a23c' } },
+        { name: '输入', type: 'bar', stack: 'token', data: data.map(d => d.token_input_total), itemStyle: { color: '#4a90d9' } },
+        { name: '输出', type: 'bar', stack: 'token', data: data.map(d => d.token_output_total), itemStyle: { color: '#67c23a' } },
+        { name: '合计', type: 'line', data: data.map(d => d.token_total), itemStyle: { color: '#e6a23c' } },
       ],
-    });
-
-    // Agent distribution pie
-    loadAgentDist(data);
+    }, true);
+    loadAgentDist();
   } catch (e) {
     document.getElementById('chart-token-trend').innerHTML = `<div class="error">${e.message}</div>`;
   }
 }
 
-async function loadAgentDist(trendData) {
+async function loadAgentDist() {
   try {
-    // Use summary grouped by agent — we'll do a drilldown query by agent
     const data = await apiFetch('/stats/ranking', { metric: 'event_count' });
     const chart = echarts.init(document.getElementById('chart-agent-dist'));
-    // For now use user-as-agent proxy; once we have per-agent summary, improve
-    // Actually let's query drilldown by a wildcard — use ranking which shows users
-    // Better: get events grouped by agent from summary
-    const agentData = data.map(d => ({ name: d.username, value: d.metric_value }));
+    const items = data.map(d => ({ name: d.username, value: d.metric_value }));
     chart.setOption({
       tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
       series: [{
         type: 'pie', radius: ['40%', '70%'],
-        data: agentData.length > 0 ? agentData : [{ name: 'No data', value: 0 }],
+        data: items.length > 0 ? items : [{ name: '暂无数据', value: 0 }],
         label: { formatter: '{b}\n{d}%' },
       }],
-    });
+    }, true);
   } catch {}
 }
 
-// --- Ranking ---
+// ===== 排名 =====
 let rankingData = [];
 let rankingSortCol = 'token_total';
 let rankingSortAsc = false;
-let RANKING_LIMIT = 100; // overridden by server config
 
 const RANKING_COLUMNS = [
-  { key: 'token_total',    label: 'Token Total' },
-  { key: 'token_input',    label: 'Token In' },
-  { key: 'token_output',   label: 'Token Out' },
-  { key: 'session_count',  label: 'Sessions' },
-  { key: 'event_count',    label: 'Events' },
-  { key: 'files_created',  label: 'Files Created' },
-  { key: 'files_modified', label: 'Files Modified' },
-  { key: 'lines_added',    label: 'Lines +' },
-  { key: 'lines_removed',  label: 'Lines -' },
-  { key: 'skill_count',    label: 'Skill Uses' },
-  { key: 'skill_unique',   label: 'Unique Skills' },
+  { key: 'token_total',    label: 'Token 合计' },
+  { key: 'token_input',    label: 'Token 输入' },
+  { key: 'token_output',   label: 'Token 输出' },
+  { key: 'session_count',  label: '会话数' },
+  { key: 'event_count',    label: '事件数' },
+  { key: 'files_created',  label: '创建文件' },
+  { key: 'files_modified', label: '修改文件' },
+  { key: 'lines_added',    label: '新增行' },
+  { key: 'lines_removed',  label: '删除行' },
+  { key: 'skill_count',    label: 'Skill 次数' },
+  { key: 'skill_unique',   label: 'Skill 种类' },
+];
+
+const TREND_COLORS = [
+  '#4a90d9', '#67c23a', '#e6a23c', '#f56c6c', '#909399',
+  '#9b59b6', '#1abc9c', '#e74c3c', '#3498db', '#2ecc71', '#f39c12'
 ];
 
 async function loadRanking() {
   try {
-    rankingData = await apiFetch('/stats/ranking-all', { limit: RANKING_LIMIT });
+    const [allData, trendData] = await Promise.all([
+      apiFetch('/stats/ranking-all', { limit: RANKING_LIMIT }),
+      loadRankingTrendData(),
+    ]);
+    rankingData = allData;
     renderRanking();
+    renderRankingTrend(trendData);
   } catch (e) {
     document.getElementById('ranking-table').innerHTML = `<div class="error">${e.message}</div>`;
   }
+}
+
+async function loadRankingTrendData() {
+  const params = getParams();
+  let granularity = 'day';
+  if (params.period === 'day') {
+    granularity = 'hour';
+  } else if (params.period === 'custom' && params.start === params.end) {
+    granularity = 'hour';
+  }
+  return apiFetch('/stats/ranking-trend', { granularity });
+}
+
+function renderRankingTrend(data) {
+  const chart = echarts.init(document.getElementById('chart-ranking-trend'));
+  if (!data || data.length === 0) {
+    chart.setOption({
+      title: { text: '暂无趋势数据', left: 'center', top: 'center', textStyle: { color: '#ccc' } },
+    }, true);
+    return;
+  }
+
+  const params = getParams();
+  const isHourly = params.period === 'day' || (params.period === 'custom' && params.start === params.end);
+
+  // X 轴标签
+  const xLabels = data.map(d => {
+    if (isHourly) {
+      const h = d.bucket.length >= 13 ? d.bucket.slice(11, 13) : d.bucket;
+      return h + ':00';
+    }
+    return d.bucket.slice(5); // "04-08"
+  });
+
+  // 各指标在周期内的最大值，用于归一化
+  const maxVals = {};
+  for (const col of RANKING_COLUMNS) {
+    maxVals[col.key] = Math.max(...data.map(d => d[col.key] || 0), 1);
+  }
+
+  const defaultVisible = ['token_total', 'session_count', 'files_modified', 'skill_count'];
+  const legendSelected = {};
+  RANKING_COLUMNS.forEach(col => {
+    legendSelected[col.label] = defaultVisible.includes(col.key);
+  });
+
+  const series = RANKING_COLUMNS.map((col, i) => ({
+    name: col.label,
+    type: 'line',
+    smooth: true,
+    data: data.map(d => {
+      const raw = d[col.key] || 0;
+      return { value: parseFloat((raw / maxVals[col.key] * 100).toFixed(1)), raw };
+    }),
+    itemStyle: { color: TREND_COLORS[i % TREND_COLORS.length] },
+    lineStyle: { width: 2 },
+    symbol: 'circle',
+    symbolSize: 4,
+    emphasis: { focus: 'series' },
+  }));
+
+  chart.setOption({
+    tooltip: {
+      trigger: 'axis',
+      formatter: function(params) {
+        let html = '<b>' + params[0].axisValue + '</b><br/>';
+        params.forEach(p => {
+          html += p.marker + ' ' + p.seriesName + ': <b>' + fmtK(p.data.raw) + '</b><br/>';
+        });
+        return html;
+      },
+    },
+    legend: {
+      type: 'scroll',
+      bottom: 0,
+      selected: legendSelected,
+    },
+    grid: { left: 50, right: 20, top: 10, bottom: 50 },
+    xAxis: { type: 'category', data: xLabels, axisLabel: { rotate: isHourly ? 0 : 30 } },
+    yAxis: {
+      type: 'value',
+      max: 100,
+      axisLabel: { formatter: v => v + '%' },
+    },
+    series,
+  }, true);
 }
 
 function sortRanking(col) {
@@ -353,7 +505,7 @@ function sortRanking(col) {
     rankingSortAsc = !rankingSortAsc;
   } else {
     rankingSortCol = col;
-    rankingSortAsc = false; // default desc
+    rankingSortAsc = false;
   }
   renderRanking();
 }
@@ -365,29 +517,17 @@ function renderRanking() {
     return rankingSortAsc ? va - vb : vb - va;
   });
 
-  // Bar chart — show top 20 by current sort column
-  const chart = echarts.init(document.getElementById('chart-ranking'));
-  const top20 = sorted.slice(0, 20).reverse();
-  const colLabel = RANKING_COLUMNS.find(c => c.key === rankingSortCol)?.label || rankingSortCol;
-  chart.setOption({
-    tooltip: { formatter: p => `${p.name}: ${fmtK(p.value)}` },
-    grid: { left: 100, right: 20, top: 10, bottom: 20 },
-    xAxis: { type: 'value', axisLabel: { formatter: v => fmtK(v) }, name: colLabel },
-    yAxis: { type: 'category', data: top20.map(d => d.username) },
-    series: [{ type: 'bar', data: top20.map(d => d[rankingSortCol] || 0), itemStyle: { color: '#4a90d9' } }],
-  });
-
-  // Table
-  let html = '<table><thead><tr><th>#</th><th>User</th>';
+  let html = '<table><thead><tr><th>#</th><th>用户</th>';
   for (const col of RANKING_COLUMNS) {
     const arrow = rankingSortCol === col.key ? (rankingSortAsc ? ' ▲' : ' ▼') : '';
-    html += `<th style="cursor:pointer;white-space:nowrap;" onclick="sortRanking('${col.key}')">${col.label}${arrow}</th>`;
+    html += `<th style="cursor:pointer;" onclick="sortRanking('${col.key}')">${col.label}${arrow}</th>`;
   }
   html += '</tr></thead><tbody>';
   sorted.forEach((d, i) => {
     const rank = i + 1;
     const cls = rank <= 3 ? `rank-${rank}` : 'rank-other';
-    html += `<tr><td><span class="rank-badge ${cls}">${rank}</span></td><td>${d.username}</td>`;
+    html += `<tr><td><span class="rank-badge ${cls}">${rank}</span></td>`;
+    html += `<td class="user-link" onclick="goToDrilldown('${d.username}')">${d.username}</td>`;
     for (const col of RANKING_COLUMNS) {
       html += `<td>${fmtK(d[col.key] || 0)}</td>`;
     }
@@ -397,17 +537,32 @@ function renderRanking() {
   document.getElementById('ranking-table').innerHTML = html;
 }
 
-// --- Drilldown ---
-async function loadUserList() {
+// ===== 点击用户进入钻取 =====
+function goToDrilldown(username) {
+  // 确保钻取用户列表中有该用户
+  const sel = document.getElementById('drilldown-user');
+  let found = false;
+  for (const opt of sel.options) {
+    if (opt.value === username) { found = true; break; }
+  }
+  if (!found) {
+    sel.innerHTML += `<option value="${username}">${username}</option>`;
+  }
+  sel.value = username;
+  switchTab('drilldown');
+}
+
+// ===== 钻取 =====
+async function loadDrilldownUsers() {
   try {
-    const data = await apiFetch('/stats/ranking', { metric: 'event_count', limit: 100 });
+    const data = await apiFetch('/stats/ranking', { metric: 'event_count', limit: 200 });
     const sel = document.getElementById('drilldown-user');
-    const existing = sel.value;
-    sel.innerHTML = '<option value="">Select user...</option>';
+    const current = sel.value;
+    sel.innerHTML = '<option value="">选择用户...</option>';
     data.forEach(d => {
       sel.innerHTML += `<option value="${d.username}">${d.username}</option>`;
     });
-    if (existing) sel.value = existing;
+    if (current) sel.value = current;
   } catch {}
 }
 
@@ -424,15 +579,16 @@ async function loadDrilldown() {
       tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
       series: [{
         type: 'pie', radius: ['40%', '70%'],
-        data: data.map(d => ({ name: d[drilldown] || 'unknown', value: d.token_total })),
+        data: data.map(d => ({ name: d[drilldown] || '未知', value: d.token_total })),
         label: { formatter: '{b}\n{d}%' },
       }],
-    });
+    }, true);
 
-    let html = `<table><thead><tr><th>${drilldown}</th><th>Events</th><th>Sessions</th><th>Token Input</th><th>Token Output</th><th>Token Total</th></tr></thead><tbody>`;
+    const colLabels = { hostname: '主机名', agent: 'Agent', model: '模型' };
+    let html = `<table><thead><tr><th>${colLabels[drilldown] || drilldown}</th><th>事件数</th><th>会话数</th><th>Token 输入</th><th>Token 输出</th><th>Token 合计</th></tr></thead><tbody>`;
     data.forEach(d => {
       html += `<tr>
-        <td>${d[drilldown] || 'unknown'}</td>
+        <td>${d[drilldown] || '未知'}</td>
         <td>${fmt(d.event_count)}</td>
         <td>${fmt(d.session_count)}</td>
         <td>${fmtK(d.token_input_total)}</td>
@@ -447,12 +603,12 @@ async function loadDrilldown() {
   }
 }
 
-// --- Tools & Skills ---
+// ===== 工具与技能 =====
 async function loadToolStats() {
   try {
     const params = getParams();
 
-    // ── Tool usage ──
+    // 工具使用
     const toolRes = await fetch(`${API}/stats/tool-usage?${qs(params)}`);
     let toolData = [];
     if (toolRes.ok) toolData = await toolRes.json();
@@ -466,14 +622,12 @@ async function loadToolStats() {
         xAxis: { type: 'value' },
         yAxis: { type: 'category', data: sorted.map(d => d.name).reverse() },
         series: [{ type: 'bar', data: sorted.map(d => d.use_count).reverse(), itemStyle: { color: '#67c23a' } }],
-      });
+      }, true);
     } else {
-      toolChart.setOption({
-        title: { text: 'No tool usage data', left: 'center', top: 'center', textStyle: { color: '#ccc' } },
-      });
+      toolChart.setOption({ title: { text: '暂无工具使用数据', left: 'center', top: 'center', textStyle: { color: '#ccc' } } }, true);
     }
 
-    // ── Skill usage ──
+    // Skill 使用
     const skillRes = await fetch(`${API}/stats/skill-usage?${qs(params)}`);
     let skillData = [];
     if (skillRes.ok) skillData = await skillRes.json();
@@ -487,27 +641,25 @@ async function loadToolStats() {
         xAxis: { type: 'value' },
         yAxis: { type: 'category', data: sorted.map(d => d.name).reverse() },
         series: [{ type: 'bar', data: sorted.map(d => d.use_count).reverse(), itemStyle: { color: '#e6a23c' } }],
-      });
+      }, true);
     } else {
-      skillChart.setOption({
-        title: { text: 'No skill usage data', left: 'center', top: 'center', textStyle: { color: '#ccc' } },
-      });
+      skillChart.setOption({ title: { text: '暂无 Skill 使用数据', left: 'center', top: 'center', textStyle: { color: '#ccc' } } }, true);
     }
 
-    // ── Skill detail table ──
+    // Skill 详情表
     let skillHtml = '';
     if (skillData.length > 0) {
-      skillHtml = `<table><thead><tr><th>Skill Name</th><th>Uses</th><th>Users</th><th>Sessions</th></tr></thead><tbody>`;
+      skillHtml = `<table><thead><tr><th>Skill 名称</th><th>使用次数</th><th>用户数</th><th>会话数</th></tr></thead><tbody>`;
       skillData.forEach(d => {
         skillHtml += `<tr><td>${d.name}</td><td>${fmt(d.use_count)}</td><td>${fmt(d.user_count)}</td><td>${fmt(d.session_count)}</td></tr>`;
       });
       skillHtml += '</tbody></table>';
     } else {
-      skillHtml = '<div style="padding:16px;color:#999;text-align:center;">No skill usage data</div>';
+      skillHtml = '<div style="padding:16px;color:#999;text-align:center;">暂无 Skill 使用数据</div>';
     }
     document.getElementById('skill-table').innerHTML = skillHtml;
 
-    // ── Event types ──
+    // 事件类型分布
     const evtChart = echarts.init(document.getElementById('chart-event-types'));
     const evtData = await apiFetch('/stats/event-types');
     if (Array.isArray(evtData) && evtData.length > 0) {
@@ -518,34 +670,16 @@ async function loadToolStats() {
           data: evtData.map(d => ({ name: d.event_type, value: d.count })),
           label: { formatter: '{b}\n{c}' },
         }],
-      });
+      }, true);
     } else {
-      evtChart.setOption({
-        title: { text: 'No event data', left: 'center', top: 'center', textStyle: { color: '#ccc' } },
-      });
+      evtChart.setOption({ title: { text: '暂无事件数据', left: 'center', top: 'center', textStyle: { color: '#ccc' } } }, true);
     }
   } catch (e) {
-    console.error('Tool stats error:', e);
+    console.error('工具统计加载失败:', e);
   }
 }
 
-// --- Load models for filter ---
-async function loadModels() {
-  try {
-    const url = `${API}/stats/models`;
-    const res = await fetch(url);
-    if (res.ok) {
-      const data = await res.json();
-      const sel = document.getElementById('model-filter');
-      sel.innerHTML = '<option value="">All Models</option>';
-      data.forEach(m => {
-        if (m.model) sel.innerHTML += `<option value="${m.model}">${m.model}</option>`;
-      });
-    }
-  } catch {}
-}
-
-// --- Formatters ---
+// ===== 格式化 =====
 function fmt(n) { return (n || 0).toLocaleString(); }
 function fmtK(n) {
   n = n || 0;
@@ -554,7 +688,7 @@ function fmtK(n) {
   return n.toLocaleString();
 }
 
-// --- Responsive charts ---
+// ===== 自适应 =====
 window.addEventListener('resize', () => {
   document.querySelectorAll('.chart-container').forEach(el => {
     const chart = echarts.getInstanceByDom(el);

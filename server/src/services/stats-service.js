@@ -214,4 +214,36 @@ async function getTrend(db, params) {
   return query;
 }
 
-module.exports = { getSummary, getRanking, getRankingAll, getDrilldown, getTrend, computeDateRange };
+/**
+ * GET /api/v1/stats/ranking-trend
+ * Returns all ranking metrics aggregated by time bucket (day or hour).
+ */
+async function getRankingTrend(db, params) {
+  const granularity = params.granularity || 'day';
+  const bucketExpr = granularity === 'hour'
+    ? "SUBSTR(event_time, 1, 13)"
+    : "SUBSTR(event_time, 1, 10)";
+
+  let query = db('events')
+    .select(
+      db.raw(`${bucketExpr} as bucket`),
+      db.raw('COALESCE(SUM(token_input), 0) as token_input'),
+      db.raw('COALESCE(SUM(token_output), 0) as token_output'),
+      db.raw('COALESCE(SUM(token_input + token_output), 0) as token_total'),
+      db.raw('COUNT(DISTINCT session_id) as session_count'),
+      db.raw('COUNT(*) as event_count'),
+      db.raw('COALESCE(SUM(files_created), 0) as files_created'),
+      db.raw('COALESCE(SUM(files_modified), 0) as files_modified'),
+      db.raw('COALESCE(SUM(lines_added), 0) as lines_added'),
+      db.raw('COALESCE(SUM(lines_removed), 0) as lines_removed'),
+      db.raw("SUM(CASE WHEN event_type = 'skill_use' THEN 1 ELSE 0 END) as skill_count"),
+      db.raw("COUNT(DISTINCT CASE WHEN event_type = 'skill_use' THEN skill_name ELSE NULL END) as skill_unique"),
+    )
+    .groupBy(db.raw(bucketExpr))
+    .orderBy('bucket', 'asc');
+
+  applyFilters(query, params);
+  return query;
+}
+
+module.exports = { getSummary, getRanking, getRankingAll, getDrilldown, getTrend, getRankingTrend, computeDateRange };

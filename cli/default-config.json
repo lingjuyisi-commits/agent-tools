@@ -1,0 +1,4 @@
+{
+  "server": { "url": "" },
+  "sync": { "batchSize": 100, "intervalSeconds": 300 }
+}
