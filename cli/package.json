@@ -4,7 +4,8 @@
   "description": "Usage tracking tool for AI coding agents (Claude Code, CodeBuddy, etc.)",
   "bin": { "agent-tools": "./bin/cli.js" },
   "scripts": {
-    "postinstall": "node scripts/postinstall.js"
+    "postinstall": "node scripts/postinstall.js",
+    "preuninstall": "node scripts/preuninstall.js"
   },
   "dependencies": {
     "commander": "^12.0.0",
