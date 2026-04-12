@@ -260,9 +260,11 @@ async function checkServerStatus() {
       RANKING_LIMIT = data.dashboard.rankingLimit;
     }
     // Client download link — uses same version as server
-    const link = document.getElementById('client-download');
-    link.textContent = `下载客户端 v${data.version}`;
-    link.style.display = '';
+    if (data.version) {
+      const link = document.getElementById('client-download');
+      link.textContent = `下载客户端 v${data.version}`;
+      link.style.display = '';
+    }
   } catch {
     document.getElementById('server-status').textContent = '服务器不可达';
     document.getElementById('server-status').style.color = '#f88';
