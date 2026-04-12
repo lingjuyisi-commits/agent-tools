@@ -16,7 +16,10 @@
     "migrate": "knex migrate:latest"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.0.2",
     "@fastify/cors": "^11.0.0",
+    "@fastify/oauth2": "^8.2.0",
+    "@fastify/session": "^11.1.1",
     "@fastify/static": "^9.0.0",
     "better-sqlite3": "^11.0.0",
     "fastify": "^5.0.0",

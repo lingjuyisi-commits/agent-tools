@@ -72,6 +72,9 @@
     <h1>Agent Tools Dashboard</h1>
     <div style="display:flex;align-items:center;gap:16px;">
       <a id="client-download" href="/api/v1/client/download" style="display:none;color:#8fc;font-size:13px;text-decoration:underline;">下载客户端</a>
+      <span id="user-info" style="display:none;color:#fff;font-size:13px;"></span>
+      <a id="login-btn" href="/auth/login" style="display:none;color:#8fc;font-size:13px;text-decoration:underline;">登录</a>
+      <button id="logout-btn" onclick="doLogout()" style="display:none;padding:4px 12px;background:#ff6b6b;border:none;color:#fff;cursor:pointer;border-radius:4px;font-size:12px;">登出</button>
       <div class="status" id="server-status">加载中...</div>
     </div>
   </div>
@@ -116,6 +119,7 @@
     <button id="btn-ranking" onclick="switchTab('ranking')">排名</button>
     <button id="btn-drilldown" onclick="switchTab('drilldown')">钻取</button>
     <button id="btn-tools" onclick="switchTab('tools')">工具与技能</button>
+    <button id="btn-admin" onclick="switchTab('admin')" style="display:none;">用户管理</button>
   </div>
 
   <!-- 概览 Tab -->
@@ -194,6 +198,34 @@
     </div>
   </div>
 
+  <!-- 用户管理 Tab (admin only) -->
+  <div id="tab-admin" class="tab-content">
+    <div style="padding:24px;">
+      <div id="admin-add-form" style="margin-bottom:20px;display:flex;gap:12px;align-items:center;">
+        <label style="font-size:13px;">用户名:</label>
+        <input id="admin-login" type="text" placeholder="OAuth 用户名" style="padding:6px 10px;border:1px solid #ccc;border-radius:4px;font-size:13px;">
+        <label style="font-size:13px;">显示名:</label>
+        <input id="admin-name" type="text" placeholder="可选" style="padding:6px 10px;border:1px solid #ccc;border-radius:4px;font-size:13px;">
+        <label style="font-size:13px;">角色:</label>
+        <select id="admin-role" style="padding:6px 10px;border:1px solid #ccc;border-radius:4px;font-size:13px;">
+          <option value="viewer">viewer</option>
+          <option value="admin">admin</option>
+        </select>
+        <button onclick="addUser()" style="padding:6px 16px;background:#4a90d9;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;">添加</button>
+      </div>
+      <div class="ranking-table" id="admin-user-table"></div>
+    </div>
+  </div>
+
+  <!-- Auth overlay (shown when not authenticated) -->
+  <div id="auth-overlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.6);z-index:1000;display:none;align-items:center;justify-content:center;">
+    <div style="background:#fff;padding:40px 60px;border-radius:12px;text-align:center;">
+      <h2 id="auth-overlay-title" style="margin-bottom:16px;color:#333;"></h2>
+      <p id="auth-overlay-msg" style="color:#666;margin-bottom:24px;"></p>
+      <a id="auth-overlay-btn" href="/auth/login" style="display:none;padding:10px 24px;background:#4a90d9;color:#fff;border-radius:6px;text-decoration:none;font-size:14px;">登录</a>
+    </div>
+  </div>
+
 <script>
 const API = '/api/v1';
 let activeTab = 'overview';
@@ -220,6 +252,7 @@ document.getElementById('period').addEventListener('change', function() {
 });
 
 checkServerStatus();
+checkAuth();
 loadFilterOptions();
 refreshAll();
 
@@ -248,8 +281,88 @@ async function apiFetch(path, extraParams = {}) {
   const params = { ...getParams(), ...extraParams };
   const url = `${API}${path}?${qs(params)}`;
   const res = await fetch(url);
+  if (res.status === 401) { showAuthOverlay('请先登录', '您需要登录后才能查看数据', true); throw new Error('Unauthorized'); }
+  if (res.status === 403) { showAuthOverlay('访问受限', '您的账号未获授权，请联系管理员', false); throw new Error('Forbidden'); }
   if (!res.ok) throw new Error(`API error: ${res.status}`);
   return res.json();
+}
+
+function showAuthOverlay(title, msg, showLogin) {
+  const overlay = document.getElementById('auth-overlay');
+  document.getElementById('auth-overlay-title').textContent = title;
+  document.getElementById('auth-overlay-msg').textContent = msg;
+  document.getElementById('auth-overlay-btn').style.display = showLogin ? '' : 'none';
+  overlay.style.display = 'flex';
+}
+
+async function checkAuth() {
+  try {
+    const res = await fetch('/auth/session');
+    if (!res.ok) return; // auth not enabled (404) — keep all UI hidden, all public
+    const data = await res.json();
+    if (data.authenticated) {
+      document.getElementById('user-info').textContent = data.user.login;
+      document.getElementById('user-info').style.display = '';
+      document.getElementById('logout-btn').style.display = '';
+      if (data.user.role === 'admin') {
+        document.getElementById('btn-admin').style.display = '';
+      }
+      if (!data.user.approved) {
+        showAuthOverlay('访问受限', '您的账号未获授权，请联系管理员', false);
+      }
+    } else {
+      document.getElementById('login-btn').style.display = '';
+    }
+  } catch {
+    // network error — keep all UI hidden
+  }
+}
+
+async function doLogout() {
+  await fetch('/auth/logout', { method: 'POST' });
+  window.location.reload();
+}
+
+// ===== Admin: User Management =====
+async function loadAdminUsers() {
+  try {
+    const res = await fetch(`${API}/admin/users`);
+    if (!res.ok) return;
+    const users = await res.json();
+    const table = document.getElementById('admin-user-table');
+    let html = '<table><tr><th>用户名</th><th>显示名</th><th>角色</th><th>添加人</th><th>添加时间</th><th>操作</th></tr>';
+    for (const u of users) {
+      const time = u.created_at ? new Date(u.created_at).toLocaleString() : '';
+      const delBtn = u.created_by === 'config' ? '—' : `<button onclick="removeUser('${u.login}')" style="padding:2px 8px;background:#ff6b6b;color:#fff;border:none;border-radius:3px;cursor:pointer;font-size:12px;">删除</button>`;
+      html += `<tr><td>${esc(u.login)}</td><td>${esc(u.name || '')}</td><td>${esc(u.role)}</td><td>${esc(u.created_by || '')}</td><td>${time}</td><td>${delBtn}</td></tr>`;
+    }
+    html += '</table>';
+    table.innerHTML = html;
+  } catch {}
+}
+
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+async function addUser() {
+  const login = document.getElementById('admin-login').value.trim();
+  if (!login) return alert('请输入用户名');
+  const name = document.getElementById('admin-name').value.trim();
+  const role = document.getElementById('admin-role').value;
+  const res = await fetch(`${API}/admin/users`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ login, name, role }),
+  });
+  const data = await res.json();
+  if (!res.ok) return alert(data.error || '添加失败');
+  document.getElementById('admin-login').value = '';
+  document.getElementById('admin-name').value = '';
+  loadAdminUsers();
+}
+
+async function removeUser(login) {
+  if (!confirm(`确认删除用户 ${login}？`)) return;
+  await fetch(`${API}/admin/users/${login}`, { method: 'DELETE' });
+  loadAdminUsers();
 }
 
 async function checkServerStatus() {
@@ -302,6 +415,7 @@ function loadTabData(name) {
   if (name === 'ranking') loadRanking();
   if (name === 'drilldown') { loadDrilldownUsers(); loadDrilldown(); }
   if (name === 'tools') loadToolStats();
+  if (name === 'admin') loadAdminUsers();
 }
 
 // ===== 刷新（不重建筛选项，只刷新数据） =====
