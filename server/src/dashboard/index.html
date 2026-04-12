@@ -431,7 +431,7 @@ async function loadSummary() {
     const data = await apiFetch('/stats/summary');
     const kpis = [
       { label: '用户数', value: fmt(data.user_count), sub: `${fmt(data.host_count)} 台主机` },
-      { label: '会话数', value: fmt(data.session_count), sub: `${fmt(data.event_count)} 事件` },
+      { label: '会话数', value: fmt(data.session_count), sub: `${fmt(data.turn_count || 0)} 轮对话 / ${fmt(data.event_count)} 事件` },
       { label: 'Token 合计', value: fmtK(data.token_total), sub: `输入: ${fmtK(data.token_input_total)} / 输出: ${fmtK(data.token_output_total)}` },
       { label: '创建文件', value: fmt(data.files_created_total), sub: `修改: ${fmt(data.files_modified_total)}` },
       { label: '新增行数', value: fmt(data.lines_added_total), sub: `删除: ${fmt(data.lines_removed_total)}` },
@@ -497,6 +497,7 @@ const RANKING_COLUMNS = [
   { key: 'token_input',    label: 'Token 输入' },
   { key: 'token_output',   label: 'Token 输出' },
   { key: 'session_count',  label: '会话数' },
+  { key: 'turn_count',     label: '对话轮次' },
   { key: 'event_count',    label: '事件数' },
   { key: 'files_created',  label: '创建文件' },
   { key: 'files_modified', label: '修改文件' },

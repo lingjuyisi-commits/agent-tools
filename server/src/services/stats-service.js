@@ -106,6 +106,7 @@ async function getSummary(db, params) {
     .select(
       db.raw('COUNT(*) as event_count'),
       db.raw('COUNT(DISTINCT session_id) as session_count'),
+      db.raw("SUM(CASE WHEN event_type = 'user_message' THEN 1 ELSE 0 END) as turn_count"),
       db.raw('COUNT(DISTINCT username) as user_count'),
       db.raw('COUNT(DISTINCT hostname) as host_count'),
       db.raw('COALESCE(SUM(token_input), 0) as token_input_total'),
@@ -146,6 +147,7 @@ async function getSummary(db, params) {
   return {
     event_count: hookRow.event_count + extRow.event_count,
     session_count: hookRow.session_count,
+    turn_count: hookRow.turn_count,
     user_count: deduplicatedUserCount,
     host_count: hookRow.host_count,
     token_input_total: hookRow.token_input_total + extRow.token_input_total,
@@ -211,6 +213,7 @@ async function getRankingAll(db, params) {
       db.raw('COALESCE(SUM(token_input + token_output), 0) as token_total'),
       db.raw('COUNT(DISTINCT session_id) as session_count'),
       db.raw('COUNT(*) as event_count'),
+      db.raw("SUM(CASE WHEN event_type = 'user_message' THEN 1 ELSE 0 END) as turn_count"),
       db.raw('COALESCE(SUM(files_created), 0) as files_created'),
       db.raw('COALESCE(SUM(files_modified), 0) as files_modified'),
       db.raw('COALESCE(SUM(lines_added), 0) as lines_added'),
@@ -254,6 +257,7 @@ async function getRankingAll(db, params) {
         token_total: ext.token_total,
         session_count: 0,
         event_count: ext.event_count,
+        turn_count: 0,
         files_created: 0, files_modified: 0,
         lines_added: 0, lines_removed: 0,
         skill_count: 0, skill_unique: 0,
