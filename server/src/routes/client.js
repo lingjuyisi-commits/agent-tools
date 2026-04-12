@@ -7,7 +7,7 @@ const tar = require('tar');
 const { pipeline } = require('stream/promises');
 const { Readable, PassThrough } = require('stream');
 
-const manifest = require('../client-version.json');
+const pkg = require('../../package.json');
 
 const DIST_DIR = path.join(__dirname, '..', '..', 'dist');
 const CLI_TGZ = path.join(DIST_DIR, 'agent-tools-cli.tgz');
@@ -16,7 +16,7 @@ const CACHE_DIR = path.join(os.homedir(), '.agent-tools-server', 'cache');
 async function clientRoutes(fastify) {
   // --- GET /api/v1/client/version ---
   fastify.get('/api/v1/client/version', async () => {
-    return manifest;
+    return { version: pkg.version };
   });
 
   // --- GET /api/v1/client/download ---
@@ -29,7 +29,7 @@ async function clientRoutes(fastify) {
     }
 
     const baseUrl = resolveBaseUrl(request);
-    const version = manifest.version;
+    const version = pkg.version;
     const cachePath = getCachePath(version, baseUrl);
 
     try {

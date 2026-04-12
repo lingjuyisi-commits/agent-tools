@@ -20,10 +20,6 @@ cleanup() {
   for f in "${RESTORE_FILES[@]}"; do
     [ -f "$f.bak" ] && mv "$f.bak" "$f"
   done
-  # Restore client-version.json from variable (avoid .bak file in src/)
-  if [ -n "${ORIG_CLIENT_VERSION:-}" ]; then
-    echo "$ORIG_CLIENT_VERSION" > "$ROOT_DIR/server/src/client-version.json"
-  fi
   rm -rf "$ROOT_DIR/server/dist"
 }
 trap cleanup EXIT
@@ -89,22 +85,9 @@ mkdir -p "$ROOT_DIR/server/dist"
 cp "$DIST_DIR/agent-tools-cli-${VERSION}.tgz" "$ROOT_DIR/server/dist/agent-tools-cli.tgz"
 echo "  -> server/dist/agent-tools-cli.tgz"
 
-# ── 生成版本清单 ──
-echo ""
-echo "── 3. 生成 client-version.json ──"
-ORIG_CLIENT_VERSION=$(cat "$ROOT_DIR/server/src/client-version.json")
-RELEASED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-cat > "$ROOT_DIR/server/src/client-version.json" << EOF
-{
-  "version": "${VERSION}",
-  "releasedAt": "${RELEASED_AT}"
-}
-EOF
-echo "  -> version: ${VERSION}, releasedAt: ${RELEASED_AT}"
-
 # ── Server ──
 echo ""
-echo "── 4. 构建 Server ──"
+echo "── 3. 构建 Server ──"
 pack_both "$ROOT_DIR/server" "agent-tools-server"
 
 # ── 完成 ──

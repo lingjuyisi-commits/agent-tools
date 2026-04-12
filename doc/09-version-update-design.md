@@ -1,5 +1,45 @@
 # 版本管理与自动更新设计
 
+## 0. 版本号规范
+
+本项目遵循 [Semantic Versioning 2.0.0](https://semver.org/lang/zh-CN/)。
+
+### 格式
+
+`MAJOR.MINOR.PATCH`（如 `0.3.0`、`1.0.0`）
+
+| 段 | 含义 | 递增时机 |
+|----|------|---------|
+| MAJOR | 不兼容变更 | 事件格式变更、数据库 schema 不兼容升级、API 破坏性修改 |
+| MINOR | 新功能 | 新增 Agent 支持、新增 API 端点、新增 Dashboard 页面 |
+| PATCH | 修复 | Bug 修复、性能优化、文档修正 |
+
+### 规则
+
+1. **严格递增**：版本号只能递增，不可跳跃（如 0.1.0 → 0.3.0）或回退（如 0.2.0 → 0.1.1）
+2. **CLI 与 Server 统一版本**：同一 git tag 同时设置两个 package.json，确保一致
+3. **`0.x.y` 阶段**：项目处于初始开发阶段，MINOR 版本变更可能包含不兼容修改
+4. **变更记录**：所有版本变更必须记录在 `CHANGELOG.md` 中，遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/) 格式
+
+### 发布流程
+
+```
+1. 更新 CHANGELOG.md：将 [Unreleased] 中的条目移到新版本标题下
+2. git tag v<version>（如 git tag v0.2.0）
+3. git push origin v<version>
+4. CI 自动：npm version → npm pack → GitHub Release
+```
+
+### 版本号对比
+
+客户端使用三段数字对比（不支持 pre-release 后缀）：
+
+```js
+// compareVersions("0.1.0", "0.2.0") → -1 (有更新)
+// compareVersions("0.2.0", "0.2.0") →  0 (已最新)
+// compareVersions("0.3.0", "0.2.0") →  1 (本地更新)
+```
+
 ## 1. 背景与目标
 
 当前系统缺少以下能力：
@@ -25,19 +65,17 @@
 ```
 GitHub CI (tag v*)
   │
-  ├── 1. 打包 CLI tgz (含 default-config.json 占位)
+  ├── 1. 打包 CLI tgz (npm version 写入版本号 + 含 default-config.json 占位)
   │         │
   │         ▼
   ├── 2. 复制 CLI tgz → server/dist/agent-tools-cli.tgz
   │
-  ├── 3. 生成 server/src/client-version.json
+  ├── 3. 打包 Server tgz (npm version 写入版本号 + 内嵌 CLI tgz)
   │
-  ├── 4. 打包 Server tgz (内嵌 CLI tgz + 版本清单)
-  │
-  └── 5. 创建 GitHub Release (两个 tgz)
+  └── 4. 创建 GitHub Release (两个 tgz)
 
 运行时（服务器）：
-  浏览器/CLI ──→ GET /api/v1/client/version ──→ 返回 { version, releasedAt }
+  浏览器/CLI ──→ GET /api/v1/client/version ──→ 返回 { version }（读取 server/package.json）
   浏览器/CLI ──→ GET /api/v1/client/download ──→ 动态注入服务器地址的 CLI tgz
 
   动态注入流程：
@@ -61,30 +99,31 @@ GitHub CI (tag v*)
     已存在 → 不覆盖（保留用户手动配置）
 ```
 
-## 3. 版本清单 (`client-version.json`)
+## 3. 版本号管理
 
-### 结构
+### 单一版本源：`package.json`
+
+版本号的唯一来源是 `server/package.json` 和 `cli/package.json` 中的 `version` 字段。
+不再使用独立的 `client-version.json` 文件。
+
+| 阶段 | 版本号来源 |
+|------|-----------|
+| 代码仓库中 | `package.json` 中的开发版本（如 `0.1.0`） |
+| CI release job | `npm version <tag>` 覆写 `package.json`（如 `0.2.0`） |
+| Server 运行时 | `require('../../package.json').version`，health 和 client/version 端点统一读取 |
+| CLI 运行时 | `require('../../package.json').version`，version 和 check-update 命令使用 |
+
+### API 响应
+
+`GET /api/v1/client/version` 返回：
 
 ```json
 {
-  "version": "0.2.0",
-  "releasedAt": "2026-04-08T12:00:00Z"
+  "version": "0.2.0"
 }
 ```
 
-> 注意：不再需要 `downloadUrl` 字段，因为下载地址就是服务器自身的 `/api/v1/client/download`。
-
-### 生命周期
-
-| 阶段 | 内容 |
-|------|------|
-| 代码仓库中 | 占位值：`{ "version": "0.0.0-dev", "releasedAt": "" }` |
-| CI release job | 覆写为真实版本号和构建时间 |
-| Server 运行时 | 一次性加载，通过 API 提供给客户端和 Dashboard |
-
-### 存放位置
-
-`server/src/client-version.json`，随 Server 源码一起打包。
+`GET /api/v1/health` 也返回同一个版本号，Dashboard 直接使用 health 端点，无需额外请求。
 
 ## 4. CLI 预置配置 (`default-config.json`)
 
@@ -132,12 +171,11 @@ GitHub CI (tag v*)
 
 ```json
 {
-  "version": "0.2.0",
-  "releasedAt": "2026-04-08T12:00:00Z"
+  "version": "0.2.0"
 }
 ```
 
-开发构建返回 `version: "0.0.0-dev"`，客户端据此跳过更新。
+版本号直接读取 `server/package.json`，与 health 端点返回一致。
 
 ### `GET /api/v1/client/download`
 
@@ -373,7 +411,6 @@ $ agent-tools check-update
 
   当前版本: v0.1.0
   最新版本: v0.2.0
-  发布时间: 2026-04-08T12:00:00Z
 
   正在下载 v0.2.0...
   正在安装...
@@ -387,13 +424,14 @@ $ agent-tools check-update
 
 ```
   CLI install → CLI npm version → CLI pack → CLI rename
-→ 复制 CLI tgz 到 server/dist/               ← 新增
-→ 生成 client-version.json                   ← 新增
+→ 复制 CLI tgz 到 server/dist/
 → Server install → Server npm version → Server pack → Server rename
 → Create Release
 ```
 
-### 新增步骤
+版本号由 `npm version` 统一写入各 `package.json`，不再需要生成独立的版本清单文件。
+
+### 关键步骤
 
 ```yaml
 # ── 内嵌 CLI tgz 到 Server ──
@@ -402,16 +440,6 @@ $ agent-tools check-update
     mkdir -p server/dist
     cp cli/agent-tools-cli-${{ steps.version.outputs.version }}.tgz \
        server/dist/agent-tools-cli.tgz
-
-- name: Generate client-version.json
-  run: |
-    RELEASED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-    cat > server/src/client-version.json << EOF
-    {
-      "version": "${{ steps.version.outputs.version }}",
-      "releasedAt": "$RELEASED_AT"
-    }
-    EOF
 ```
 
 ### Server package.json 变更
@@ -451,17 +479,17 @@ $ agent-tools check-update
 
 ### 页面初始化时
 
+Dashboard 在请求 `/api/v1/health` 时已获取版本号，直接复用：
+
 ```js
-// 请求客户端版本信息
-const clientInfo = await fetch('/api/v1/client/version').then(r => r.json());
-if (clientInfo.version && clientInfo.version !== '0.0.0-dev') {
-  const link = document.getElementById('client-download');
-  link.textContent = `下载客户端 v${clientInfo.version}`;
-  link.style.display = '';
-}
+// health 端点返回 data.version，复用于下载链接
+const link = document.getElementById('client-download');
+link.textContent = `下载客户端 v${data.version}`;
+link.style.display = '';
 ```
 
 点击链接直接触发浏览器下载（download API 返回 `Content-Disposition: attachment`）。
+无需额外请求 `/api/v1/client/version`，减少一次 HTTP 请求。
 
 ## 9. 涉及文件
 
@@ -474,14 +502,13 @@ if (clientInfo.version && clientInfo.version !== '0.0.0-dev') {
 | `cli/scripts/postinstall.js` | 新建 | 安装后自动应用预置配置 |
 | `cli/package.json` | 修改 | 确认 postinstall 脚本和 files 字段 |
 | **Server** | | |
-| `server/src/client-version.json` | 新建 | 版本清单占位文件 |
-| `server/src/routes/client.js` | 新建 | 版本查询 + 动态 tgz 下载 API |
+| `server/src/routes/client.js` | 新建 | 版本查询（读 package.json）+ 动态 tgz 下载 API |
 | `server/src/app.js` | 修改 | 注册 client 路由 |
-| `server/src/routes/health.js` | 修改 | version 改读 package.json |
-| `server/package.json` | 修改 | 添加 `tar` 依赖 + `files` 字段含 `dist/` |
-| `server/src/dashboard/index.html` | 修改 | header 添加下载链接 |
+| `server/src/routes/health.js` | 修改 | version 读 package.json |
+| `server/package.json` | 修改 | 添加 `tar` 依赖 + `files` 字段含 `dist/`，版本号唯一来源 |
+| `server/src/dashboard/index.html` | 修改 | header 下载链接（版本号来自 health 端点） |
 | **CI** | | |
-| `.github/workflows/ci.yml` | 修改 | CLI tgz 内嵌 + 版本清单生成 |
+| `.github/workflows/ci.yml` | 修改 | CLI tgz 内嵌，npm version 统一写入版本号 |
 
 ## 10. 完整数据流
 
@@ -514,7 +541,7 @@ if (clientInfo.version && clientInfo.version !== '0.0.0-dev') {
 开发者:
   4. agent-tools check-update
      → GET http://server:3000/api/v1/client/version
-     → { version: "0.3.0", ... }
+     → { version: "0.3.0" }
      → 当前 v0.2.0 < 最新 v0.3.0
      → GET http://server:3000/api/v1/client/download
      → npm install -g <下载的 tgz>
@@ -535,14 +562,14 @@ if (clientInfo.version && clientInfo.version !== '0.0.0-dev') {
 ### 本地开发验证
 
 1. 创建测试 tgz：`cd cli && npm pack` → 复制到 `server/dist/agent-tools-cli.tgz`
-2. 编辑 `server/src/client-version.json` 为 `{ "version": "99.0.0", "releasedAt": "..." }`
-3. 启动 server：`node server/bin/server.js`
-4. `curl http://localhost:3000/api/v1/client/version` → 返回版本 JSON
+2. 启动 server：`node server/bin/server.js`（版本号来自 `server/package.json`）
+3. `curl http://localhost:3000/api/v1/client/version` → 返回 `{ "version": "0.1.0" }`
+4. `curl http://localhost:3000/api/v1/health` → version 字段与上一步一致
 5. `curl -o test.tgz http://localhost:3000/api/v1/client/download` → 下载 tgz
 6. 解压验证：`tar xzf test.tgz package/default-config.json -O` → server.url 应为 `http://localhost:3000`
 7. `node cli/bin/cli.js version` → 输出当前版本
-8. `node cli/bin/cli.js check-update --check-only` → 提示有更新
-9. Dashboard 右上角显示"下载客户端 v99.0.0"链接
+8. `node cli/bin/cli.js check-update --check-only` → 版本对比正确
+9. Dashboard 右上角显示"下载客户端 v0.1.0"链接（版本来自 health 端点）
 
 ### CI 端到端验证
 

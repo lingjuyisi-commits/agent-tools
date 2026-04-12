@@ -58,11 +58,11 @@
 - [x] **版本管理与自动更新**（设计文档：`doc/09-version-update-design.md`）
   - [x] CLI `version` 命令：显示当前安装版本（来自 package.json，CI 打包时由 tag 写入）
   - [x] CLI `check-update` 命令：查询服务器最新版本，自动下载安装
-  - [x] 服务端 `/api/v1/client/version` 接口：返回内嵌的客户端版本清单
+  - [x] 服务端 `/api/v1/client/version` 接口：返回版本号（统一读取 package.json）
   - [x] 服务端 `/api/v1/client/download` 接口：动态注入服务器地址到 CLI tgz 后返回
   - [x] CLI `default-config.json` 预置配置 + `postinstall.js` 自动应用服务器地址
   - [x] Dashboard 右上角客户端下载链接
-  - [x] CI 打包流程：CLI → 内嵌到 Server → 生成版本清单 → Server 打包
+  - [x] CI 打包流程：CLI → 内嵌到 Server → Server 打包（版本号由 npm version 统一写入 package.json）
   - [x] 文件缓存：`~/.agent-tools-server/cache/cli-{version}-{urlHash}.tgz`
 
 ### Phase 6（待实现）
@@ -116,7 +116,7 @@
 | `server/src/routes/health.js` | `GET /api/v1/health` 路由 |
 | `server/src/services/event-service.js` | 批量写入 + event_id 去重 |
 | `server/src/routes/client.js` | 客户端版本查询和下载接口：`/api/v1/client/version`、`/api/v1/client/download`（动态注入服务器地址） |
-| `server/src/client-version.json` | 客户端版本清单（CI 生成，开发时为占位值） |
+| `server/package.json` | 版本号唯一来源（CI 通过 `npm version` 写入，运行时 health 和 client/version 端点统一读取） |
 | `server/src/services/stats-service.js` | 统计查询核心：`computeDateRange`、`applyFilters`、`getSummary`、`getRanking`、`getRankingAll`、`getDrilldown`、`getTrend`、`getRankingTrend` |
 | `server/src/init-wizard.js` | 首次运行向导：交互式配置 SQLite / MySQL / PostgreSQL 和端口 |
 | `server/src/config.js` | 服务端配置管理（`~/.agent-tools-server/config.json`） |
