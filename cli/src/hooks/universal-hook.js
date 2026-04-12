@@ -94,13 +94,37 @@ function processEvent(agent, eventType, rawData, dbPath) {
     try {
       store.insert(event);
 
-      // Check if we should trigger a background sync
+      // Check if we should trigger a background sync.
+      // Two conditions (either one triggers sync):
+      //   1. Batch threshold: unsynced events >= batchSize (default 100)
+      //   2. Time interval:   seconds since last sync >= intervalSeconds (default 300)
       const config = require('../utils/config');
       const cfg = config.load();
       const batchSize = cfg?.sync?.batchSize || 100;
+      const intervalSeconds = cfg?.sync?.intervalSeconds || 300;
       const unsyncedCount = store.getUnsyncedCount();
 
+      let shouldSync = false;
+
+      // Condition 1: batch threshold
       if (unsyncedCount >= batchSize) {
+        shouldSync = true;
+      }
+
+      // Condition 2: time interval (only if there are unsynced events)
+      if (!shouldSync && unsyncedCount > 0) {
+        const lastSyncAt = store.getMeta('last_sync_at');
+        if (lastSyncAt) {
+          const elapsed = (Date.now() - new Date(lastSyncAt).getTime()) / 1000;
+          if (elapsed >= intervalSeconds) shouldSync = true;
+        } else {
+          // First run — record start time, wait for interval to elapse
+          store.setMeta('last_sync_at', new Date().toISOString());
+        }
+      }
+
+      if (shouldSync) {
+        store.setMeta('last_sync_at', new Date().toISOString());
         store.close();
         // Fire-and-forget sync
         const { Uploader } = require('../collector/uploader');

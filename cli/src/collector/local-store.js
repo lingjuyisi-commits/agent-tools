@@ -33,7 +33,21 @@ class LocalStore {
       );
       CREATE INDEX IF NOT EXISTS idx_synced ON local_events(synced, created_at);
       CREATE INDEX IF NOT EXISTS idx_created ON local_events(created_at);
+
+      CREATE TABLE IF NOT EXISTS metadata (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      );
     `);
+  }
+
+  getMeta(key) {
+    const row = this.db.prepare('SELECT value FROM metadata WHERE key = ?').get(key);
+    return row ? row.value : null;
+  }
+
+  setMeta(key, value) {
+    this.db.prepare('INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)').run(key, value);
   }
 
   insert(event) {
