@@ -15,6 +15,16 @@
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-04-12
+
+### Added
+- 外部数据同步 API：`POST /api/v1/external/daily-stats`，接收外部系统日粒度聚合数据
+- 数据库 migration `006_add_external_fields`：daily_stats 表增加 source/display_name/tool_type 列
+- Dashboard 概览和排名自动合并 hook + 外部数据（同一用户汇总显示）
+- 外部数据 `tool_type=cli` 自动排除，只统计 plugin/ide
+- 用户数去重计数（UNION DISTINCT，同一用户不重复计算）
+- 接入指导文档 `doc/11-integration-guide.md`：登录认证配置 + 外部数据同步 API 使用
+
 ## [0.5.0] - 2026-04-12
 
 ### Added
