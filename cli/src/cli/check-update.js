@@ -35,8 +35,8 @@ async function runCheckUpdate(options) {
   const current = pkg.version;
   const latest = manifest.version;
 
-  if (!latest || latest === '0.0.0-dev') {
-    console.log(chalk.gray('  服务器为开发版本，无版本信息。'));
+  if (!latest) {
+    console.log(chalk.gray('  服务器未返回版本信息。'));
     return;
   }
 
@@ -47,9 +47,6 @@ async function runCheckUpdate(options) {
 
   console.log(`  当前版本: ${chalk.yellow('v' + current)}`);
   console.log(`  最新版本: ${chalk.green('v' + latest)}`);
-  if (manifest.releasedAt) {
-    console.log(`  发布时间: ${manifest.releasedAt}`);
-  }
 
   // 4. Auto-update unless --check-only
   if (options.checkOnly) {
