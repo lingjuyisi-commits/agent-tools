@@ -1,5 +1,45 @@
 # 版本管理与自动更新设计
 
+## 0. 版本号规范
+
+本项目遵循 [Semantic Versioning 2.0.0](https://semver.org/lang/zh-CN/)。
+
+### 格式
+
+`MAJOR.MINOR.PATCH`（如 `0.3.0`、`1.0.0`）
+
+| 段 | 含义 | 递增时机 |
+|----|------|---------|
+| MAJOR | 不兼容变更 | 事件格式变更、数据库 schema 不兼容升级、API 破坏性修改 |
+| MINOR | 新功能 | 新增 Agent 支持、新增 API 端点、新增 Dashboard 页面 |
+| PATCH | 修复 | Bug 修复、性能优化、文档修正 |
+
+### 规则
+
+1. **严格递增**：版本号只能递增，不可跳跃（如 0.1.0 → 0.3.0）或回退（如 0.2.0 → 0.1.1）
+2. **CLI 与 Server 统一版本**：同一 git tag 同时设置两个 package.json，确保一致
+3. **`0.x.y` 阶段**：项目处于初始开发阶段，MINOR 版本变更可能包含不兼容修改
+4. **变更记录**：所有版本变更必须记录在 `CHANGELOG.md` 中，遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/) 格式
+
+### 发布流程
+
+```
+1. 更新 CHANGELOG.md：将 [Unreleased] 中的条目移到新版本标题下
+2. git tag v<version>（如 git tag v0.2.0）
+3. git push origin v<version>
+4. CI 自动：npm version → npm pack → GitHub Release
+```
+
+### 版本号对比
+
+客户端使用三段数字对比（不支持 pre-release 后缀）：
+
+```js
+// compareVersions("0.1.0", "0.2.0") → -1 (有更新)
+// compareVersions("0.2.0", "0.2.0") →  0 (已最新)
+// compareVersions("0.3.0", "0.2.0") →  1 (本地更新)
+```
+
 ## 1. 背景与目标
 
 当前系统缺少以下能力：
