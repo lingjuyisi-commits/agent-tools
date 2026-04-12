@@ -26,7 +26,8 @@ agent-tools/
     ├── 06-server-detail.md
     ├── 07-implementation-plan.md
     ├── 08-development-guide.md
-    └── 09-version-update-design.md
+    ├── 09-version-update-design.md
+    └── 10-auth-design.md
 ```
 
 ## 快速开始
@@ -69,6 +70,33 @@ http://localhost:3000
 ```
 
 即可查看统计数据、排名和趋势图。
+
+### （可选）启用登录认证
+
+默认所有端点公开，适合内网部署。如需限制 Dashboard 访问，可配置 OAuth2 认证：
+
+```json
+// ~/.agent-tools-server/config.json 中添加 auth 段
+{
+  "auth": {
+    "provider": "oauth2",
+    "clientId": "your-client-id",
+    "clientSecret": "your-client-secret",
+    "authorizeHost": "https://idaas.company.com",
+    "userinfoUrl": "https://idaas.company.com/oauth/userinfo",
+    "adminUsers": ["admin-username"],
+    "sessionSecret": "at-least-32-chars-random-string"
+  }
+}
+```
+
+启用后：
+- 数据上报（`/api/v1/events/batch`）、健康检查、客户端下载仍保持公开
+- Dashboard 和统计 API 需要登录后才能访问
+- 管理员可在 Dashboard「用户管理」Tab 中添加/删除允许访问的用户
+- 支持通用 OAuth2/OIDC（`"provider": "oauth2"`）和 GitHub（`"provider": "github"`）两种认证方式
+
+详见 `doc/10-auth-design.md`。
 
 ---
 
@@ -223,6 +251,7 @@ npm install -g agent-tools-server
 | `doc/07-implementation-plan.md` | 分阶段实施计划（Phase 1-5）和任务拆解 |
 | `doc/08-development-guide.md` | AI 辅助开发指南：代码库导航、扩展新 Agent 等 |
 | `doc/09-version-update-design.md` | 版本管理与自动更新设计：CLI 自更新、Server 分发、反向代理支持 |
+| `doc/10-auth-design.md` | 认证与用户管理设计：可插拔 OAuth2/OIDC、用户白名单、管理员权限 |
 
 ## License
 

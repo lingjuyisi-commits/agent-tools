@@ -15,6 +15,24 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-12
+
+### Added
+- 可插拔 OAuth2/OIDC 认证系统（`server/src/auth/`）
+  - 通用 OAuth2/OIDC provider：适配任意 IDaaS 平台，通过配置字段映射
+  - GitHub OAuth provider：开发/测试备用
+  - 用户白名单管理：`allowed_users` 数据库表，管理员在 Dashboard 中添加/删除用户
+  - 认证守卫：实时查 DB 白名单，admin 改动即时生效
+  - Dashboard 登录/登出 UI + 用户管理 Tab（管理员可见）
+  - 401/403 响应处理 + 登录引导遮罩层
+- 用户管理 API：`GET/POST/DELETE /api/v1/admin/users`（管理员专属）
+- 数据库 migration `005_create_allowed_users`
+
+### Changed
+- Cookie/Session 注册提升到 app 级别（解决 Fastify 插件封装作用域问题）
+- 认证可选：未配置 `auth.provider` 时所有端点保持公开（向后兼容）
+- README 补充认证配置说明和设计文档索引
+
 ## [0.4.0] - 2026-04-12
 
 ### Added
