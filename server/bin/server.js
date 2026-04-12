@@ -47,6 +47,20 @@ async function main() {
   });
   console.log('Migrations complete.');
 
+  // Sync adminUsers from config → allowed_users table
+  if (cfg.auth?.adminUsers?.length) {
+    for (const login of cfg.auth.adminUsers) {
+      const exists = await db('allowed_users').where('login', login).first();
+      if (!exists) {
+        await db('allowed_users').insert({ login, name: '', role: 'admin', created_by: 'config' });
+        console.log(`  Admin user added: ${login}`);
+      } else if (exists.role !== 'admin') {
+        await db('allowed_users').where('login', login).update({ role: 'admin' });
+        console.log(`  Admin user promoted: ${login}`);
+      }
+    }
+  }
+
   // Build and start the server
   const app = buildApp(db, cfg);
 

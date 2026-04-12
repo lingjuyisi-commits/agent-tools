@@ -17,7 +17,6 @@
 
 ## [0.4.0] - 2026-04-12
 
-
 ### Added
 - Token 增量计算：Stop 事件改为上报增量 token（避免服务端 SUM 重复计数）
 - 公共 token-snapshots 模块：提取到 `cli/src/utils/token-snapshots.js`，原子写入防并发
