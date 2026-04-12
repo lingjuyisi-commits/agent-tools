@@ -1,4 +1,5 @@
 const fs = require('fs');
+const { computeDelta } = require('../../utils/token-snapshots');
 
 function normalize(eventType, rawData) {
   const base = {
@@ -22,13 +23,18 @@ function normalize(eventType, rawData) {
   }
 
   // ── Token extraction (Stop / SessionEnd) ────────────────────────────────
-  // Read transcript JSONL to sum usage data (same approach as Claude Code).
+  // Read transcript JSONL and compute INCREMENTAL token usage:
+  //   delta = current_cumulative - last_snapshot
   if ((eventType === 'Stop' || eventType === 'SessionEnd') && rawData.transcript_path) {
     try {
-      const totals = readTranscriptUsage(rawData.transcript_path);
-      if (totals.input_tokens)  base.token_input = totals.input_tokens;
-      if (totals.output_tokens) base.token_output = totals.output_tokens;
-      if (totals.model)         base.model = totals.model;
+      const cumulative = readTranscriptUsage(rawData.transcript_path);
+      const delta = computeDelta(base.session_id, cumulative);
+
+      if (delta.input_tokens)  base.token_input = delta.input_tokens;
+      if (delta.output_tokens) base.token_output = delta.output_tokens;
+      if (delta.cache_read)    base.token_cache_read = delta.cache_read;
+      if (delta.cache_write)   base.token_cache_write = delta.cache_write;
+      if (cumulative.model)    base.model = cumulative.model;
     } catch {
       // transcript read failure is non-fatal
     }
@@ -80,7 +86,7 @@ function extractFileChanges(base, toolName, input) {
 // ── Transcript token extraction ───────────────────────────────────────────
 
 function readTranscriptUsage(transcriptPath) {
-  const totals = { input_tokens: 0, output_tokens: 0, model: null };
+  const totals = { input_tokens: 0, output_tokens: 0, cache_read: 0, cache_write: 0, model: null };
   if (!fs.existsSync(transcriptPath)) return totals;
 
   const content = fs.readFileSync(transcriptPath, 'utf-8');
@@ -92,6 +98,8 @@ function readTranscriptUsage(transcriptPath) {
       if (usage) {
         totals.input_tokens  += usage.input_tokens || 0;
         totals.output_tokens += usage.output_tokens || 0;
+        totals.cache_read    += usage.cache_read_input_tokens || 0;
+        totals.cache_write   += usage.cache_creation_input_tokens || 0;
       }
       const model = entry?.message?.model;
       if (model) totals.model = model;
