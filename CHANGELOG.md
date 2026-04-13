@@ -15,6 +15,12 @@
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-04-13
+
+### Added
+- 对话轮次统计：概览 KPI 显示「N 轮对话」，排名表增加「对话轮次」列
+- 基于 UserPromptSubmit 事件（event_type='user_message'）计数
+
 ## [0.6.0] - 2026-04-12
 
 ### Added
