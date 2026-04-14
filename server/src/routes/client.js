@@ -13,7 +13,8 @@ const DIST_DIR = path.join(__dirname, '..', '..', 'dist');
 const CLI_TGZ = path.join(DIST_DIR, 'agent-tools-cli.tgz');
 const CACHE_DIR = path.join(os.homedir(), '.agent-tools-server', 'cache');
 
-async function clientRoutes(fastify) {
+async function clientRoutes(fastify, opts) {
+  const publicUrl = opts?.config?.server?.publicUrl;
   // --- GET /api/v1/client/version ---
   fastify.get('/api/v1/client/version', async () => {
     return { version: pkg.version };
@@ -28,7 +29,7 @@ async function clientRoutes(fastify) {
       });
     }
 
-    const baseUrl = resolveBaseUrl(request);
+    const baseUrl = publicUrl || resolveBaseUrl(request);
     const version = pkg.version;
     const cachePath = getCachePath(version, baseUrl);
 
