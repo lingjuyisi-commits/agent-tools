@@ -71,8 +71,14 @@ function applyFilters(query, params) {
 
 /**
  * Apply common filters to a daily_stats query (date uses stat_date, not event_time).
+ * Returns false if the filter would exclude all external data (e.g. filtering by
+ * a specific hostname or agent that isn't 'external'), so callers can skip the query.
  */
 function applyExternalFilters(query, params) {
+  // If filtering by specific hostname or agent, external data doesn't match
+  if (params.hostname && params.hostname !== 'external') return false;
+  if (params.agent && params.agent !== 'external') return false;
+
   const range = computeDateRange(params);
   if (range) {
     query.where('stat_date', '>=', range.start)
@@ -80,9 +86,7 @@ function applyExternalFilters(query, params) {
   }
   if (params.model) query.where('model', params.model);
   if (params.user) query.where('username', params.user);
-  // External data always has hostname='external' and agent='external',
-  // so hostname/agent filters only apply to non-external queries
-  return query;
+  return true;
 }
 
 /**
@@ -122,8 +126,9 @@ async function getSummary(db, params) {
   applyFilters(query, params);
   const hookRow = (await query)[0];
 
-  // 2. External data from daily_stats table
-  let extQuery = externalBaseQuery(db)
+  // 2. External data from daily_stats table (skip if filter excludes external)
+  let extRow = { event_count: 0, user_count: 0, token_input_total: 0, token_output_total: 0, token_total: 0 };
+  const extQuery = externalBaseQuery(db)
     .select(
       db.raw('COALESCE(SUM(event_count), 0) as event_count'),
       db.raw('COUNT(DISTINCT username) as user_count'),
@@ -131,8 +136,9 @@ async function getSummary(db, params) {
       db.raw('COALESCE(SUM(token_output_total), 0) as token_output_total'),
       db.raw('COALESCE(SUM(token_input_total + token_output_total), 0) as token_total')
     );
-  applyExternalFilters(extQuery, params);
-  const extRow = (await extQuery)[0];
+  if (applyExternalFilters(extQuery, params)) {
+    extRow = (await extQuery)[0];
+  }
 
   // 3. Deduplicated user count (same user in both hook + external counts as 1)
   const userCountResult = await db.raw(`
@@ -225,8 +231,9 @@ async function getRankingAll(db, params) {
   applyFilters(hookQuery, params);
   const hookRows = await hookQuery;
 
-  // 2. External data from daily_stats (exclude cli)
-  let extQuery = externalBaseQuery(db)
+  // 2. External data from daily_stats (exclude cli; skip if filter excludes external)
+  let extRows = [];
+  const extQuery = externalBaseQuery(db)
     .select(
       'username',
       db.raw('COALESCE(SUM(token_input_total), 0) as token_input'),
@@ -235,8 +242,9 @@ async function getRankingAll(db, params) {
       db.raw('COALESCE(SUM(event_count), 0) as event_count'),
     )
     .groupBy('username');
-  applyExternalFilters(extQuery, params);
-  const extRows = await extQuery;
+  if (applyExternalFilters(extQuery, params)) {
+    extRows = await extQuery;
+  }
 
   // 3. Merge by username
   const merged = {};
@@ -274,6 +282,7 @@ async function getRankingAll(db, params) {
 /**
  * GET /api/v1/stats/drilldown
  * Returns breakdown for a specific user by hostname, agent, or model.
+ * Merges external data when drilling down by model.
  */
 async function getDrilldown(db, params) {
   const { username, drilldown } = params;
@@ -282,6 +291,7 @@ async function getDrilldown(db, params) {
   const validGroups = ['hostname', 'agent', 'model'];
   const groupBy = validGroups.includes(groupCol) ? groupCol : 'hostname';
 
+  // Hook data
   let query = db('events')
     .select(
       groupBy,
@@ -296,8 +306,42 @@ async function getDrilldown(db, params) {
     .orderBy('token_total', 'desc');
 
   applyFilters(query, { ...params, user: undefined });
+  const hookRows = await query;
 
-  return query;
+  // External data — only merge when drilling by model (hostname/agent are always 'external')
+  if (groupBy === 'model') {
+    const extQuery = externalBaseQuery(db)
+      .select(
+        'model',
+        db.raw('COALESCE(SUM(event_count), 0) as event_count'),
+        db.raw('0 as session_count'),
+        db.raw('COALESCE(SUM(token_input_total), 0) as token_input_total'),
+        db.raw('COALESCE(SUM(token_output_total), 0) as token_output_total'),
+        db.raw('COALESCE(SUM(token_input_total + token_output_total), 0) as token_total')
+      )
+      .where('username', username)
+      .groupBy('model');
+    if (applyExternalFilters(extQuery, { ...params, user: undefined })) {
+      const extRows = await extQuery;
+
+      // Merge by model name
+      const merged = {};
+      for (const row of hookRows) merged[row.model] = { ...row };
+      for (const ext of extRows) {
+        if (merged[ext.model]) {
+          merged[ext.model].event_count += ext.event_count;
+          merged[ext.model].token_input_total += ext.token_input_total;
+          merged[ext.model].token_output_total += ext.token_output_total;
+          merged[ext.model].token_total += ext.token_total;
+        } else {
+          merged[ext.model] = { ...ext };
+        }
+      }
+      return Object.values(merged).sort((a, b) => b.token_total - a.token_total);
+    }
+  }
+
+  return hookRows;
 }
 
 /**
