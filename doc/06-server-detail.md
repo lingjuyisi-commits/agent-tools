@@ -368,6 +368,10 @@ Response 200:
 
 ### 5.5 下钻查询
 
+支持按 `hostname`（主机名）、`agent`（Agent）、`model`（模型）三个维度分组。Dashboard 会自动选择返回数据行数最多的维度作为默认分组，用户也可以手动切换。
+
+按 `model` 分组时会合并外部数据（`daily_stats` 中 `source='external'`）；按 `hostname` 或 `agent` 分组时仅显示 hook 数据（外部数据的 hostname/agent 固定为 `'external'`，无下钻意义）。
+
 ```
 GET /api/v1/stats/drilldown?period=week&date=2026-04-07&username=leon&drilldown=hostname
 
@@ -508,12 +512,10 @@ Dashboard (SPA)
 │   ├── 全指标表格（点击列头排序，展示 Token/会话/事件/文件/行数/Skill 等所有维度）
 │   ├── 用户排名柱状图（跟随排序列更新）
 │   └── 排名明细表格 (可展开下钻)
-├── 用户详情页 (点击排名条目进入)
-│   ├── 用户KPI卡片
-│   ├── 机器分布
-│   ├── Agent使用趋势
-│   ├── Tool/Skill使用排名
-│   └── 会话列表
+├── 钻取页 (点击排名用户名进入)
+│   ├── 用户选择 + 分组维度选择（自动选择数据最多的维度）
+│   ├── 分组饼图（Token 占比）
+│   └── 分组明细表格（事件数/会话数/Token）
 └── Tool/Skill分析页
     ├── Tool使用频率排名（排除 skill_use 事件）
     ├── Skill使用频率排名（按 skill_name 聚合 + 明细表）

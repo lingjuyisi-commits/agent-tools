@@ -40,7 +40,7 @@
 
 ### Phase 4（已完成）
 
-- [x] Dashboard Drilldown Tab（用户/机器下钻，饼图 + 表格）
+- [x] Dashboard Drilldown Tab（用户/机器下钻，饼图 + 表格，自动选择数据最多的分组维度）
 - [x] Dashboard Tools & Skills Tab（工具/Skill 分别统计 + 事件类型饼图）
 - [x] `/api/v1/stats/drilldown` 接口
 - [x] `/api/v1/stats/tool-usage` 接口（排除 skill_use 事件）
