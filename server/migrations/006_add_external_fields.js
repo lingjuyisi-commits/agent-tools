@@ -1,12 +1,15 @@
-exports.up = function (knex) {
+exports.up = async function(knex) {
+  const hasSource = await knex.schema.hasColumn('daily_stats', 'source');
+  if (hasSource) return; // already applied
+
   return knex.schema.alterTable('daily_stats', (t) => {
-    t.string('source').defaultTo('hook');   // 'hook' | 'external'
-    t.string('display_name');               // user display name (from external system)
-    t.string('tool_type');                  // 'cli' | 'plugin' | 'ide' (external data)
+    t.string('source').defaultTo('hook');
+    t.string('display_name');
+    t.string('tool_type');
   });
 };
 
-exports.down = function (knex) {
+exports.down = function(knex) {
   return knex.schema.alterTable('daily_stats', (t) => {
     t.dropColumn('source');
     t.dropColumn('display_name');

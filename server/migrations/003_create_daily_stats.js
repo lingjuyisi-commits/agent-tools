@@ -1,4 +1,5 @@
-exports.up = function(knex) {
+exports.up = async function(knex) {
+  if (await knex.schema.hasTable('daily_stats')) return;
   return knex.schema.createTable('daily_stats', t => {
     t.increments('id');
     t.string('stat_date', 10).notNullable();
@@ -23,5 +24,5 @@ exports.up = function(knex) {
 };
 
 exports.down = function(knex) {
-  return knex.schema.dropTable('daily_stats');
+  return knex.schema.dropTableIfExists('daily_stats');
 };
