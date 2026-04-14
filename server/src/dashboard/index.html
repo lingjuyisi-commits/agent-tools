@@ -154,7 +154,7 @@
     <div class="drilldown-section">
       <div style="display:flex;align-items:center;gap:16px;margin:16px 0;">
         <label>用户：</label>
-        <select id="drilldown-user" onchange="loadDrilldown()">
+        <select id="drilldown-user" onchange="loadDrilldown(true)">
           <option value="">选择用户...</option>
         </select>
         <label>分组方式：</label>
@@ -413,7 +413,7 @@ function switchTab(name) {
 
 function loadTabData(name) {
   if (name === 'ranking') loadRanking();
-  if (name === 'drilldown') { loadDrilldownUsers(); loadDrilldown(); }
+  if (name === 'drilldown') { loadDrilldownUsers(); loadDrilldown(true); }
   if (name === 'tools') loadToolStats();
   if (name === 'admin') loadAdminUsers();
 }
@@ -661,6 +661,7 @@ function goToDrilldown(username) {
     sel.innerHTML += `<option value="${username}">${username}</option>`;
   }
   sel.value = username;
+  loadDrilldown(true);
   switchTab('drilldown');
 }
 
@@ -678,10 +679,33 @@ async function loadDrilldownUsers() {
   } catch {}
 }
 
-async function loadDrilldown() {
+async function autoSelectDrilldownGroup(username) {
+  // Try each group dimension, pick the one with most rows
+  const dims = ['model', 'agent', 'hostname'];
+  let best = { dim: 'hostname', count: 0 };
+  for (const dim of dims) {
+    try {
+      const data = await apiFetch('/stats/drilldown', { username, drilldown: dim });
+      if (data.length > best.count) {
+        best = { dim, count: data.length };
+      }
+    } catch {}
+  }
+  if (best.count > 0) {
+    document.getElementById('drilldown-by').value = best.dim;
+  }
+}
+
+async function loadDrilldown(autoGroup) {
   const username = document.getElementById('drilldown-user').value;
-  const drilldown = document.getElementById('drilldown-by').value;
   if (!username) return;
+
+  // Auto-select best group dimension on first load for this user
+  if (autoGroup) {
+    await autoSelectDrilldownGroup(username);
+  }
+
+  const drilldown = document.getElementById('drilldown-by').value;
 
   try {
     const data = await apiFetch('/stats/drilldown', { username, drilldown });
