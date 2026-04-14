@@ -115,10 +115,18 @@ module.exports = async function oauth2Provider(fastify, opts) {
       // Fetch user info (support both header and query param for token)
       const userinfoBase = auth.userinfoUrl || `${authorizeHost}/oauth/userinfo`;
       const tokenInQuery = auth.userinfoTokenMethod === 'query';
-      const userinfoUrl = tokenInQuery
-        ? `${userinfoBase}${userinfoBase.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(accessToken)}`
-        : userinfoBase;
-      const userinfoHeaders = tokenInQuery ? {} : { Authorization: `Bearer ${accessToken}` };
+      let userinfoUrl = userinfoBase;
+      let userinfoHeaders = { Authorization: `Bearer ${accessToken}` };
+      if (tokenInQuery) {
+        const sep = userinfoBase.includes('?') ? '&' : '?';
+        const queryParams = new URLSearchParams({
+          access_token: accessToken,
+          client_id: auth.clientId,
+          scope,
+        });
+        userinfoUrl = `${userinfoBase}${sep}${queryParams}`;
+        userinfoHeaders = {};
+      }
       request.log.info({ userinfoUrl, tokenMethod: tokenInQuery ? 'query' : 'header' }, 'Fetching user info...');
       const userRes = await fetch(userinfoUrl, { headers: userinfoHeaders });
       if (!userRes.ok) {
