@@ -140,15 +140,22 @@ async function getSummary(db, params) {
     extRow = (await extQuery)[0];
   }
 
-  // 3. Deduplicated user count (same user in both hook + external counts as 1)
-  const userCountResult = await db.raw(`
-    SELECT COUNT(*) as total FROM (
-      SELECT DISTINCT username FROM events WHERE 1=1
-      UNION
-      SELECT DISTINCT username FROM daily_stats WHERE source = 'external' AND (tool_type IS NULL OR tool_type != 'cli')
-    ) t
-  `);
-  const deduplicatedUserCount = userCountResult[0]?.total ?? userCountResult?.total ?? (hookRow.user_count + extRow.user_count);
+  // 3. Deduplicated user count — query distinct usernames from both sources then merge in JS
+  let hookUsersQuery = db('events').distinct('username');
+  applyFilters(hookUsersQuery, params);
+  const hookUsers = (await hookUsersQuery).map(r => r.username);
+
+  const allUsers = new Set(hookUsers);
+
+  if (extRow.user_count > 0) {
+    let extUsersQuery = externalBaseQuery(db).distinct('username');
+    if (applyExternalFilters(extUsersQuery, params)) {
+      const extUsers = (await extUsersQuery).map(r => r.username);
+      extUsers.forEach(u => allUsers.add(u));
+    }
+  }
+
+  const deduplicatedUserCount = allUsers.size;
 
   return {
     event_count: hookRow.event_count + extRow.event_count,
@@ -170,7 +177,7 @@ async function getSummary(db, params) {
 
 /**
  * GET /api/v1/stats/ranking
- * Returns ranked users by the given metric.
+ * Returns ranked users by the given metric, merging hook + external data.
  */
 async function getRanking(db, params) {
   const metric = params.metric || 'token_total';
@@ -190,17 +197,49 @@ async function getRanking(db, params) {
     skill_unique: db.raw("COUNT(DISTINCT CASE WHEN event_type = 'skill_use' THEN skill_name ELSE NULL END) as metric_value"),
   };
 
+  // External data only has token and event_count metrics
+  const extMetricMap = {
+    token_total: 'SUM(token_input_total + token_output_total)',
+    token_input: 'SUM(token_input_total)',
+    token_output: 'SUM(token_output_total)',
+    event_count: 'SUM(event_count)',
+  };
+
   const metricExpr = metricMap[metric] || metricMap.token_total;
 
-  let query = db('events')
+  // 1. Hook data
+  let hookQuery = db('events')
     .select('username', metricExpr)
-    .groupBy('username')
-    .orderBy('metric_value', 'desc')
-    .limit(limit);
+    .groupBy('username');
+  applyFilters(hookQuery, params);
+  const hookRows = await hookQuery;
 
-  applyFilters(query, params);
+  // 2. External data (only for metrics that exist in external)
+  const extMetricSql = extMetricMap[metric];
+  let extRows = [];
+  if (extMetricSql) {
+    const extQuery = externalBaseQuery(db)
+      .select('username', db.raw(`COALESCE(${extMetricSql}, 0) as metric_value`))
+      .groupBy('username');
+    if (applyExternalFilters(extQuery, params)) {
+      extRows = await extQuery;
+    }
+  }
 
-  return query;
+  // 3. Merge by username
+  const merged = {};
+  for (const row of hookRows) merged[row.username] = { ...row };
+  for (const ext of extRows) {
+    if (merged[ext.username]) {
+      merged[ext.username].metric_value += ext.metric_value;
+    } else {
+      merged[ext.username] = { ...ext };
+    }
+  }
+
+  return Object.values(merged)
+    .sort((a, b) => b.metric_value - a.metric_value)
+    .slice(0, limit);
 }
 
 /**
