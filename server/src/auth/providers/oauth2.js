@@ -16,6 +16,7 @@
  *   auth.scope          (default: ['openid', 'profile'])
  *   auth.callbackUrl    (default: http://localhost:{port}/auth/callback)
  *   auth.fieldMap       (default: { id: 'sub', login: 'preferred_username', name: 'name', avatar: 'picture' })
+ *   auth.userinfoTokenMethod  (default: 'header') — 'header' uses Authorization Bearer, 'query' appends access_token to URL
  */
 const crypto = require('crypto');
 
@@ -111,12 +112,15 @@ module.exports = async function oauth2Provider(fastify, opts) {
       }
       request.log.info('OAuth2 token obtained successfully');
 
-      // Fetch user info
-      const userinfoUrl = auth.userinfoUrl || `${authorizeHost}/oauth/userinfo`;
-      request.log.info({ userinfoUrl }, 'Fetching user info...');
-      const userRes = await fetch(userinfoUrl, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+      // Fetch user info (support both header and query param for token)
+      const userinfoBase = auth.userinfoUrl || `${authorizeHost}/oauth/userinfo`;
+      const tokenInQuery = auth.userinfoTokenMethod === 'query';
+      const userinfoUrl = tokenInQuery
+        ? `${userinfoBase}${userinfoBase.includes('?') ? '&' : '?'}access_token=${encodeURIComponent(accessToken)}`
+        : userinfoBase;
+      const userinfoHeaders = tokenInQuery ? {} : { Authorization: `Bearer ${accessToken}` };
+      request.log.info({ userinfoUrl, tokenMethod: tokenInQuery ? 'query' : 'header' }, 'Fetching user info...');
+      const userRes = await fetch(userinfoUrl, { headers: userinfoHeaders });
       if (!userRes.ok) {
         const body = await userRes.text().catch(() => '');
         request.log.error({ status: userRes.status, body }, 'Userinfo request failed');
