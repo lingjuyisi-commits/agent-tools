@@ -23,26 +23,9 @@ async function clientRoutes(fastify, opts) {
   // --- GET /api/v1/client/download ---
   fastify.get('/api/v1/client/download', async (request, reply) => {
     if (!fs.existsSync(CLI_TGZ)) {
-      // Try to auto-generate from sibling cli/ directory (development mode)
-      const cliDir = path.join(__dirname, '..', '..', '..', 'cli');
-      if (fs.existsSync(path.join(cliDir, 'package.json'))) {
-        try {
-          const { execSync } = require('child_process');
-          fs.mkdirSync(DIST_DIR, { recursive: true });
-          const tgzName = execSync('npm pack --pack-destination ' + JSON.stringify(DIST_DIR), { cwd: cliDir, encoding: 'utf-8' }).trim();
-          const packedPath = path.join(DIST_DIR, tgzName);
-          if (packedPath !== CLI_TGZ) fs.renameSync(packedPath, CLI_TGZ);
-          request.log.info('Auto-generated CLI tgz from sibling cli/ directory');
-        } catch (err) {
-          request.log.error(err, 'Failed to auto-generate CLI tgz');
-        }
-      }
-    }
-
-    if (!fs.existsSync(CLI_TGZ)) {
       return reply.status(404).send({
-        error: '客户端安装包不可用',
-        hint: '请先运行: cd cli && npm pack，然后将 tgz 复制到 server/dist/agent-tools-cli.tgz',
+        error: '客户端安装包不可用（开发环境）',
+        hint: '此功能需要通过 CI 打包的正式 server 版本',
       });
     }
 
