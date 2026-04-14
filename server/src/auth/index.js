@@ -21,6 +21,8 @@ module.exports = async function authPlugin(fastify, opts) {
     throw new Error(`Unknown auth provider: "${provider}". Valid: ${VALID_PROVIDERS.join(', ')}`);
   }
 
+  fastify.log.info({ provider, callbackUrl: auth.callbackUrl || `http://localhost:${serverPort}/auth/callback` }, 'Auth enabled, loading provider');
+
   // Load provider plugin (registers /auth/login and /auth/callback)
   const providerPlugin = require(`./providers/${provider}`);
   fastify.register(providerPlugin, { auth, serverPort });
@@ -28,12 +30,14 @@ module.exports = async function authPlugin(fastify, opts) {
   // Session query endpoint
   fastify.get('/auth/session', async (request) => {
     if (!request.session?.user) {
+      request.log.debug('Session check: not authenticated');
       return { authenticated: false, user: null };
     }
 
     // Real-time whitelist + role check
     const login = request.session.user.login;
     const allowed = await db('allowed_users').where('login', login).first();
+    request.log.debug({ login, approved: !!allowed, role: allowed?.role }, 'Session check: user found');
 
     return {
       authenticated: true,
@@ -47,7 +51,9 @@ module.exports = async function authPlugin(fastify, opts) {
 
   // Logout endpoint
   fastify.post('/auth/logout', async (request) => {
+    const login = request.session?.user?.login || 'unknown';
     request.session.destroy();
+    request.log.info({ login }, 'User logged out');
     return { message: 'Logged out' };
   });
 };

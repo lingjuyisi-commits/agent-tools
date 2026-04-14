@@ -36,15 +36,23 @@ module.exports = async function oauth2Provider(fastify, opts) {
 
   fastify.get('/auth/callback', async (request, reply) => {
     try {
+      request.log.info('OAuth2 callback received, exchanging code for token...');
       const tokenResult = await fastify.idaas.getAccessTokenFromAuthorizationCodeFlow(request);
       const accessToken = tokenResult.token.access_token;
+      request.log.info('OAuth2 token obtained successfully');
 
       const userinfoUrl = auth.userinfoUrl || `${auth.authorizeHost}/oauth/userinfo`;
+      request.log.info({ userinfoUrl }, 'Fetching user info...');
       const res = await fetch(userinfoUrl, {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
-      if (!res.ok) throw new Error(`Userinfo request failed: ${res.status}`);
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        request.log.error({ status: res.status, body }, 'Userinfo request failed');
+        throw new Error(`Userinfo request failed: ${res.status} ${body}`);
+      }
       const userData = await res.json();
+      request.log.info({ userDataKeys: Object.keys(userData) }, 'Userinfo response received');
 
       const fm = auth.fieldMap || {};
       request.session.user = {
@@ -53,6 +61,7 @@ module.exports = async function oauth2Provider(fastify, opts) {
         name: userData[fm.name || 'name'] || '',
         avatar_url: userData[fm.avatar || 'picture'] || null,
       };
+      request.log.info({ login: request.session.user.login }, 'OAuth2 login successful');
 
       reply.redirect('/dashboard/index.html');
     } catch (err) {

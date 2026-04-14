@@ -22,12 +22,21 @@ module.exports = async function githubProvider(fastify, opts) {
 
   fastify.get('/auth/callback', async (request, reply) => {
     try {
+      request.log.info('GitHub OAuth callback received, exchanging code for token...');
       const tokenResult = await fastify.github.getAccessTokenFromAuthorizationCodeFlow(request);
+      request.log.info('GitHub token obtained successfully');
+
+      request.log.info('Fetching GitHub user info...');
       const res = await fetch('https://api.github.com/user', {
         headers: { Authorization: `Bearer ${tokenResult.token.access_token}` },
       });
-      if (!res.ok) throw new Error(`GitHub API failed: ${res.status}`);
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        request.log.error({ status: res.status, body }, 'GitHub API failed');
+        throw new Error(`GitHub API failed: ${res.status} ${body}`);
+      }
       const userData = await res.json();
+      request.log.info({ login: userData.login, id: userData.id }, 'GitHub user info received');
 
       request.session.user = {
         id: userData.id,
@@ -35,6 +44,7 @@ module.exports = async function githubProvider(fastify, opts) {
         name: userData.name || userData.login,
         avatar_url: userData.avatar_url,
       };
+      request.log.info({ login: userData.login }, 'GitHub login successful');
 
       reply.redirect('/dashboard/index.html');
     } catch (err) {
