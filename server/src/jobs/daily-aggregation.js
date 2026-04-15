@@ -4,11 +4,16 @@ const cron = require('node-cron');
  * Run daily aggregation: summarize events into daily_stats and tool_usage_detail.
  * Runs for yesterday's data by default.
  */
+/** Format a Date as YYYY-MM-DD in local timezone. */
+function localDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 async function aggregateDay(db, dateStr) {
   if (!dateStr) {
     const yesterday = new Date();
     yesterday.setDate(yesterday.getDate() - 1);
-    dateStr = yesterday.toISOString().slice(0, 10);
+    dateStr = localDate(yesterday);
   }
 
   const startTime = dateStr + 'T00:00:00.000Z';
@@ -110,7 +115,7 @@ async function aggregateDay(db, dateStr) {
 
 /**
  * Start the daily aggregation cron job.
- * Runs every day at 00:05 UTC.
+ * Runs every day at 00:05 local time (set TZ=Asia/Shanghai for UTC+8).
  */
 function startDailyAggregation(db) {
   cron.schedule('5 0 * * *', async () => {
@@ -121,11 +126,9 @@ function startDailyAggregation(db) {
     } catch (err) {
       console.error('Daily aggregation failed:', err);
     }
-  }, {
-    timezone: 'UTC'
   });
 
-  console.log('Daily aggregation job scheduled (00:05 UTC).');
+  console.log('Daily aggregation job scheduled (00:05 local time).');
 }
 
 module.exports = { startDailyAggregation, aggregateDay };

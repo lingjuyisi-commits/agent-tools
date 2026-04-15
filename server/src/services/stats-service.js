@@ -1,6 +1,11 @@
+/** Format a Date as YYYY-MM-DD in local timezone (respects TZ env). */
+function localDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
 /**
  * Compute date range from period + date parameters.
- * Returns { start, end } as ISO date strings (YYYY-MM-DD), or null for no filter.
+ * Returns { start, end } as ISO date strings (YYYY-MM-DD) in local timezone, or null for no filter.
  */
 function computeDateRange(params) {
   const { period, date, start, end } = params;
@@ -17,7 +22,7 @@ function computeDateRange(params) {
   const refDate = date ? new Date(date) : new Date();
 
   if (period === 'day') {
-    const d = refDate.toISOString().slice(0, 10);
+    const d = localDate(refDate);
     return { start: d, end: d };
   }
 
@@ -30,8 +35,8 @@ function computeDateRange(params) {
     const sunday = new Date(monday);
     sunday.setDate(monday.getDate() + 6);
     return {
-      start: monday.toISOString().slice(0, 10),
-      end: sunday.toISOString().slice(0, 10)
+      start: localDate(monday),
+      end: localDate(sunday)
     };
   }
 
@@ -41,8 +46,8 @@ function computeDateRange(params) {
     const firstDay = new Date(year, month, 1);
     const lastDay = new Date(year, month + 1, 0);
     return {
-      start: firstDay.toISOString().slice(0, 10),
-      end: lastDay.toISOString().slice(0, 10)
+      start: localDate(firstDay),
+      end: localDate(lastDay)
     };
   }
 

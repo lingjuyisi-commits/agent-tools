@@ -43,6 +43,11 @@ agent-tools-server
 # 首次运行将启动交互式初始化向导，引导配置数据库
 ```
 
+> **时区提示**：Docker 部署时建议设置 `TZ=Asia/Shanghai` 环境变量，确保日期统计和定时任务按东八区执行：
+> ```bash
+> docker run -e TZ=Asia/Shanghai your-image
+```
+
 ### Step 2：安装客户端
 
 在每台开发者机器上安装客户端并完成初始化：
