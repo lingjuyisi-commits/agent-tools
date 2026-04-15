@@ -128,6 +128,25 @@ async function statsRoutes(fastify, opts) {
 
     return query;
   });
+
+  // CLI version distribution: active users and event count per version
+  fastify.get('/api/v1/stats/cli-versions', async (request, reply) => {
+    let query = db('events')
+      .select('agent_version as version')
+      .countDistinct('username as active_users')
+      .count('* as event_count')
+      .whereNotNull('agent_version')
+      .groupBy('agent_version')
+      .orderBy('event_count', 'desc');
+
+    const range = computeDateRange(request.query);
+    if (range) {
+      query.where('event_time', '>=', range.start)
+           .where('event_time', '<', range.end + 'T23:59:59.999Z');
+    }
+
+    return query;
+  });
 }
 
 module.exports = statsRoutes;

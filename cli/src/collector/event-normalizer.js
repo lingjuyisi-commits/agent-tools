@@ -1,5 +1,6 @@
 const os = require('os');
 const { v4: uuidv4 } = require('uuid');
+const pkg = require('../../package.json');
 
 function createNormalizedEvent(agentData) {
   return {
@@ -7,6 +8,7 @@ function createNormalizedEvent(agentData) {
     username: os.userInfo().username,
     hostname: os.hostname(),
     platform: os.platform(),
+    agent_version: pkg.version,
     event_time: new Date().toISOString(),
     // Defaults are null (not 0) to distinguish "not available" from "genuinely zero".
     // Adapters set actual values only when the data source provides them:

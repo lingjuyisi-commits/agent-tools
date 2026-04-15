@@ -1,0 +1,52 @@
+#!/usr/bin/env node
+
+/**
+ * Silent auto-update worker — called via fork() from uploader.js.
+ * Downloads and installs a new CLI version without user interaction.
+ *
+ * Usage: node check-update-worker.js <version> <downloadUrl>
+ */
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { execSync } = require('child_process');
+
+const LOG_FILE = path.join(os.homedir(), '.agent-tools', 'data', 'update-log.json');
+
+function log(entry) {
+  try {
+    const dir = path.dirname(LOG_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    const logs = fs.existsSync(LOG_FILE) ? JSON.parse(fs.readFileSync(LOG_FILE, 'utf-8')) : [];
+    logs.push({ ...entry, time: new Date().toISOString() });
+    // Keep last 20 entries
+    fs.writeFileSync(LOG_FILE, JSON.stringify(logs.slice(-20), null, 2));
+  } catch {}
+}
+
+async function main() {
+  const [,, version, downloadUrl] = process.argv;
+  if (!version || !downloadUrl) process.exit(0);
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-tools-autoupdate-'));
+  const tgzPath = path.join(tmpDir, `agent-tools-cli-${version}.tgz`);
+
+  try {
+    // Download
+    const res = await fetch(downloadUrl, { signal: AbortSignal.timeout(120000) });
+    if (!res.ok) throw new Error(`Download failed: HTTP ${res.status}`);
+    const buffer = Buffer.from(await res.arrayBuffer());
+    fs.writeFileSync(tgzPath, buffer);
+
+    // Install
+    execSync(`npm install -g "${tgzPath}"`, { stdio: 'ignore', timeout: 120000 });
+
+    log({ status: 'success', version, from: require('../../package.json').version });
+  } catch (err) {
+    log({ status: 'failed', version, error: err.message });
+  } finally {
+    try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
+  }
+}
+
+main().catch(() => process.exit(0));
