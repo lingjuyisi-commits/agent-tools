@@ -1,5 +1,7 @@
+const { localNow } = require('../utils/date');
+
 async function insertEventBatch(db, events) {
-  const receivedTime = new Date().toISOString();
+  const receivedTime = localNow();
   let accepted = 0;
   let duplicates = 0;
   let errors = 0;

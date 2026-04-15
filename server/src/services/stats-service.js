@@ -1,10 +1,7 @@
+const { localDate } = require('../utils/date');
+
 /** Ensure a value from DB is a number (MySQL/PG may return string for SUM). */
 function num(v) { return Number(v) || 0; }
-
-/** Format a Date as YYYY-MM-DD in local timezone (respects TZ env). */
-function localDate(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
 
 /**
  * Compute date range from period + date parameters.

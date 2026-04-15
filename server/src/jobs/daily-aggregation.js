@@ -1,14 +1,10 @@
 const cron = require('node-cron');
+const { localDate } = require('../utils/date');
 
 /**
  * Run daily aggregation: summarize events into daily_stats and tool_usage_detail.
- * Runs for yesterday's data by default.
+ * Runs for yesterday's data by default (local timezone, set TZ=Asia/Shanghai).
  */
-/** Format a Date as YYYY-MM-DD in local timezone. */
-function localDate(d) {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
 async function aggregateDay(db, dateStr) {
   if (!dateStr) {
     const yesterday = new Date();
@@ -16,8 +12,8 @@ async function aggregateDay(db, dateStr) {
     dateStr = localDate(yesterday);
   }
 
-  const startTime = dateStr + 'T00:00:00.000Z';
-  const endTime = dateStr + 'T23:59:59.999Z';
+  const startTime = dateStr + 'T00:00:00';
+  const endTime = dateStr + 'T23:59:59';
 
   // Aggregate daily stats grouped by username, hostname, agent, model
   const statsRows = await db('events')

@@ -3,6 +3,8 @@
  * Receives daily aggregated stats from external systems (e.g. AI gateways)
  * and upserts them into the daily_stats table with source='external'.
  */
+const { toLocalDate } = require('../utils/date');
+
 async function externalRoutes(fastify, opts) {
   const { db } = opts;
 
@@ -23,7 +25,7 @@ async function externalRoutes(fastify, opts) {
         continue;
       }
 
-      const statDate = r.sync_time.slice(0, 10); // YYYY-MM-DD
+      const statDate = toLocalDate(r.sync_time);
       const row = {
         stat_date: statDate,
         username: r.username,
