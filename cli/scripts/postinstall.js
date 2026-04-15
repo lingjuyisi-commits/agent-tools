@@ -37,8 +37,8 @@ try {
     }
   }
 
-  // --- Detect installed agents ---
-  const { detectAll } = require('../src/detector');
+  // --- Detect and auto-setup hooks ---
+  const { detectAll, setupAll } = require('../src/detector');
 
   console.log('\n[agent-tools] 扫描已安装的 AI 编程 Agent...\n');
 
@@ -54,19 +54,26 @@ try {
       if (a.hooksConfigured) parts.push('hooks 已配置');
       console.log(`    + ${a.name} (${parts.join(', ')})`);
     }
+
+    // Auto-inject hooks for all detected agents
+    if (autoConfigured || fs.existsSync(CONFIG_FILE)) {
+      console.log('\n  自动注入 hooks...');
+      try {
+        setupAll();
+        console.log('  hooks 注入完成。\n');
+      } catch {
+        console.log('  hooks 注入失败，请手动运行: agent-tools setup\n');
+      }
+    }
   } else {
     console.log('  未检测到支持的 AI 编程 Agent。');
   }
 
-  if (fs.existsSync(CONFIG_FILE) && !autoConfigured) {
-    console.log('\n  已初始化。运行 "agent-tools setup" 更新 hooks。\n');
-  } else if (!autoConfigured) {
+  if (!autoConfigured && !fs.existsSync(CONFIG_FILE)) {
     console.log('\n  开始使用:');
     console.log('    agent-tools init');
     console.log('\n  本地开发:');
     console.log('    agent-tools init --server http://localhost:3000\n');
-  } else {
-    console.log('\n  运行 "agent-tools setup" 注入 hooks 开始采集数据。\n');
   }
 } catch {
   // Post-install should never fail the installation
