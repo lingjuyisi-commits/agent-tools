@@ -53,12 +53,13 @@ class Uploader {
    */
   _triggerAutoUpdate(update) {
     try {
-      const { fork } = require('child_process');
+      const { spawn } = require('child_process');
       const workerPath = require('path').join(__dirname, '..', 'cli', 'check-update-worker.js');
       const downloadUrl = `${this.serverUrl}${update.downloadUrl}`;
-      fork(workerPath, [update.version, downloadUrl], {
+      spawn(process.execPath, [workerPath, update.version, downloadUrl], {
         detached: true,
         stdio: 'ignore',
+        windowsHide: true,
       }).unref();
     } catch {
       // Silent — auto-update failure should never affect normal operation
