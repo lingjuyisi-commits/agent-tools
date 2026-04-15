@@ -28,7 +28,8 @@ agent-tools/
     ├── 08-development-guide.md
     ├── 09-version-update-design.md
     ├── 10-auth-design.md
-    └── 11-integration-guide.md
+    ├── 11-integration-guide.md
+    └── 12-auto-update-design.md
 ```
 
 ## 快速开始
@@ -259,6 +260,7 @@ npm install -g agent-tools-server
 | `doc/09-version-update-design.md` | 版本管理与自动更新设计：CLI 自更新、Server 分发、反向代理支持 |
 | `doc/10-auth-design.md` | 认证与用户管理设计：可插拔 OAuth2/OIDC、用户白名单、管理员权限 |
 | `doc/11-integration-guide.md` | 接入指导：登录认证配置 + 外部数据同步 API |
+| `doc/12-auto-update-design.md` | 自动更新设计：上报 piggyback 版本检查 + 响应驱动静默安装 |
 
 ## License
 
