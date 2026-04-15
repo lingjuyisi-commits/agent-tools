@@ -195,6 +195,14 @@
         <h3>事件类型分布</h3>
         <div id="chart-event-types" class="chart-container"></div>
       </div>
+      <div class="chart-card">
+        <h3>客户端版本分布</h3>
+        <div id="chart-cli-versions" class="chart-container"></div>
+      </div>
+    </div>
+    <div class="ranking-section">
+      <h3>版本活跃详情</h3>
+      <div class="ranking-table" id="cli-version-table"></div>
     </div>
   </div>
 
@@ -809,6 +817,36 @@ async function loadToolStats() {
       }, true);
     } else {
       evtChart.setOption({ title: { text: '暂无事件数据', left: 'center', top: 'center', textStyle: { color: '#ccc' } } }, true);
+    }
+
+    // 客户端版本分布
+    const verChart = echarts.init(document.getElementById('chart-cli-versions'));
+    try {
+      const verRes = await fetch(`${API}/stats/cli-versions?${qs(params)}`);
+      const verData = verRes.ok ? await verRes.json() : [];
+      if (verData.length > 0) {
+        verChart.setOption({
+          tooltip: { trigger: 'item', formatter: '{b}: {c} 用户 ({d}%)' },
+          series: [{
+            type: 'pie', radius: ['40%', '70%'],
+            data: verData.map(d => ({ name: d.version || '未知', value: Number(d.active_users) || 0 })),
+            label: { formatter: '{b}\n{c} 用户' },
+          }],
+        }, true);
+
+        // 版本详情表
+        let verHtml = '<table><thead><tr><th>版本</th><th>活跃用户</th><th>事件数</th></tr></thead><tbody>';
+        verData.forEach(d => {
+          verHtml += `<tr><td>${esc(d.version || '未知')}</td><td>${fmt(d.active_users)}</td><td>${fmt(d.event_count)}</td></tr>`;
+        });
+        verHtml += '</tbody></table>';
+        document.getElementById('cli-version-table').innerHTML = verHtml;
+      } else {
+        verChart.setOption({ title: { text: '暂无版本数据', left: 'center', top: 'center', textStyle: { color: '#ccc' } } }, true);
+        document.getElementById('cli-version-table').innerHTML = '<div style="padding:16px;color:#999;text-align:center;">暂无版本数据</div>';
+      }
+    } catch {
+      verChart.setOption({ title: { text: '版本数据加载失败', left: 'center', top: 'center', textStyle: { color: '#ccc' } } }, true);
     }
   } catch (e) {
     console.error('工具统计加载失败:', e);
