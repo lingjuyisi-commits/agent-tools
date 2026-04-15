@@ -15,6 +15,28 @@
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-04-15
+
+### Added
+- 钻取页自动选择数据最多的分组维度（model/agent/hostname）
+- OAuth2 provider 支持 userinfo query 模式（`userinfoTokenMethod: "query"`），兼容更多 IDaaS
+- `server.publicUrl` 配置项，Docker/代理部署时直接指定客户端下载地址
+- OAuth2 回调全流程调试日志（token 交换、userinfo 请求、登录成功/失败）
+- 对话轮次统计（turn_count）显示在概览 KPI 和排名表中
+
+### Changed
+- OAuth2 通用 provider 改为手动 POST token endpoint（不再依赖 simple-oauth2），兼容所有 OAuth2 提供方
+- 日期计算改用本地时区（`localDate()`），配合 `TZ=Asia/Shanghai` 环境变量确保东八区正确
+- 聚合定时任务 cron 从 UTC 改为跟随系统时区
+- package.json 版本号更新为 0.7.0（与 tag 同步）
+
+### Fixed
+- 数据库迁移脚本全部改为幂等（hasTable/hasColumn 前置检查）
+- 筛选 agent/hostname 时正确排除外部数据
+- getRanking 合并外部数据（token/event_count 指标）
+- getSummary user_count 去重跟随筛选器
+- getDrilldown 按 model 下钻时合并外部数据
+
 ## [0.7.0] - 2026-04-13
 
 ### Added
