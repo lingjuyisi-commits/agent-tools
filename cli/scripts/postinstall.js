@@ -14,13 +14,14 @@ try {
   const CONFIG_FILE = path.join(HOME, 'config.json');
   const DATA_DIR = path.join(HOME, 'data');
 
-  // --- Auto-apply default config if server URL is pre-configured ---
+  // --- Apply default config (always overwrite — config is server-controlled) ---
   const defaultCfgPath = path.join(__dirname, '..', 'default-config.json');
   let autoConfigured = false;
 
-  if (fs.existsSync(defaultCfgPath) && !fs.existsSync(CONFIG_FILE)) {
+  if (fs.existsSync(defaultCfgPath)) {
     const defaultCfg = JSON.parse(fs.readFileSync(defaultCfgPath, 'utf-8'));
     const serverUrl = defaultCfg?.server?.url;
+
     if (serverUrl) {
       const cfg = {
         ...defaultCfg,
@@ -31,7 +32,7 @@ try {
       fs.mkdirSync(HOME, { recursive: true });
       fs.mkdirSync(DATA_DIR, { recursive: true });
       fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf-8');
-      console.log(`\n[agent-tools] 已自动配置服务器地址: ${serverUrl}`);
+      console.log(`\n[agent-tools] 已配置服务器地址: ${serverUrl}`);
       autoConfigured = true;
     }
   }
