@@ -1,3 +1,6 @@
+/** Ensure a value from DB is a number (MySQL/PG may return string for SUM). */
+function num(v) { return Number(v) || 0; }
+
 /** Format a Date as YYYY-MM-DD in local timezone (respects TZ env). */
 function localDate(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -163,20 +166,20 @@ async function getSummary(db, params) {
   const deduplicatedUserCount = allUsers.size;
 
   return {
-    event_count: hookRow.event_count + extRow.event_count,
-    session_count: hookRow.session_count,
-    turn_count: hookRow.turn_count,
+    event_count: num(hookRow.event_count) + num(extRow.event_count),
+    session_count: num(hookRow.session_count),
+    turn_count: num(hookRow.turn_count),
     user_count: deduplicatedUserCount,
-    host_count: hookRow.host_count,
-    token_input_total: hookRow.token_input_total + extRow.token_input_total,
-    token_output_total: hookRow.token_output_total + extRow.token_output_total,
-    token_cache_read_total: hookRow.token_cache_read_total,
-    token_cache_write_total: hookRow.token_cache_write_total,
-    token_total: hookRow.token_total + extRow.token_total,
-    files_created_total: hookRow.files_created_total,
-    files_modified_total: hookRow.files_modified_total,
-    lines_added_total: hookRow.lines_added_total,
-    lines_removed_total: hookRow.lines_removed_total,
+    host_count: num(hookRow.host_count),
+    token_input_total: num(hookRow.token_input_total) + num(extRow.token_input_total),
+    token_output_total: num(hookRow.token_output_total) + num(extRow.token_output_total),
+    token_cache_read_total: num(hookRow.token_cache_read_total),
+    token_cache_write_total: num(hookRow.token_cache_write_total),
+    token_total: num(hookRow.token_total) + num(extRow.token_total),
+    files_created_total: num(hookRow.files_created_total),
+    files_modified_total: num(hookRow.files_modified_total),
+    lines_added_total: num(hookRow.lines_added_total),
+    lines_removed_total: num(hookRow.lines_removed_total),
   };
 }
 
@@ -236,7 +239,7 @@ async function getRanking(db, params) {
   for (const row of hookRows) merged[row.username] = { ...row };
   for (const ext of extRows) {
     if (merged[ext.username]) {
-      merged[ext.username].metric_value += ext.metric_value;
+      merged[ext.username].metric_value += num(ext.metric_value);
     } else {
       merged[ext.username] = { ...ext };
     }
@@ -290,25 +293,29 @@ async function getRankingAll(db, params) {
     extRows = await extQuery;
   }
 
-  // 3. Merge by username
+  // 3. Merge by username (num() ensures no string concat from MySQL/PG)
   const merged = {};
   for (const row of hookRows) {
     merged[row.username] = { ...row };
+    // Ensure numeric types for all metric fields
+    for (const k of ['token_input','token_output','token_total','session_count','event_count','turn_count','files_created','files_modified','lines_added','lines_removed','skill_count','skill_unique']) {
+      merged[row.username][k] = num(row[k]);
+    }
   }
   for (const ext of extRows) {
     if (merged[ext.username]) {
-      merged[ext.username].token_input += ext.token_input;
-      merged[ext.username].token_output += ext.token_output;
-      merged[ext.username].token_total += ext.token_total;
-      merged[ext.username].event_count += ext.event_count;
+      merged[ext.username].token_input += num(ext.token_input);
+      merged[ext.username].token_output += num(ext.token_output);
+      merged[ext.username].token_total += num(ext.token_total);
+      merged[ext.username].event_count += num(ext.event_count);
     } else {
       merged[ext.username] = {
         username: ext.username,
-        token_input: ext.token_input,
-        token_output: ext.token_output,
-        token_total: ext.token_total,
+        token_input: num(ext.token_input),
+        token_output: num(ext.token_output),
+        token_total: num(ext.token_total),
         session_count: 0,
-        event_count: ext.event_count,
+        event_count: num(ext.event_count),
         turn_count: 0,
         files_created: 0, files_modified: 0,
         lines_added: 0, lines_removed: 0,
@@ -373,10 +380,10 @@ async function getDrilldown(db, params) {
       for (const row of hookRows) merged[row.model] = { ...row };
       for (const ext of extRows) {
         if (merged[ext.model]) {
-          merged[ext.model].event_count += ext.event_count;
-          merged[ext.model].token_input_total += ext.token_input_total;
-          merged[ext.model].token_output_total += ext.token_output_total;
-          merged[ext.model].token_total += ext.token_total;
+          merged[ext.model].event_count += num(ext.event_count);
+          merged[ext.model].token_input_total += num(ext.token_input_total);
+          merged[ext.model].token_output_total += num(ext.token_output_total);
+          merged[ext.model].token_total += num(ext.token_total);
         } else {
           merged[ext.model] = { ...ext };
         }
