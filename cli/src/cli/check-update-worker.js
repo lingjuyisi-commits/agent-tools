@@ -9,7 +9,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { execSync } = require('child_process');
+const { spawnSync } = require('child_process');
 
 const LOG_FILE = path.join(os.homedir(), '.agent-tools', 'data', 'update-log.json');
 
@@ -38,8 +38,14 @@ async function main() {
     const buffer = Buffer.from(await res.arrayBuffer());
     fs.writeFileSync(tgzPath, buffer);
 
-    // Install
-    execSync(`npm install -g "${tgzPath}"`, { stdio: 'ignore', timeout: 120000 });
+    // Install (windowsHide prevents cmd window flash on Windows)
+    const result = spawnSync(`npm install -g "${tgzPath}"`, {
+      stdio: 'ignore',
+      timeout: 120000,
+      shell: true,
+      windowsHide: true,
+    });
+    if (result.status !== 0) throw new Error(`npm install exited with code ${result.status}`);
 
     log({ status: 'success', version, from: require('../../package.json').version });
   } catch (err) {
