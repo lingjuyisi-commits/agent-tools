@@ -15,6 +15,34 @@
 
 ## [Unreleased]
 
+## [0.8.5] - 2026-04-16
+
+### Added
+- 自动更新机制：events/batch 响应中附带版本更新信息，客户端自动静默安装
+- CLI 事件携带 `agent_version` 字段 + `X-Client-Version` 请求头
+- `/api/v1/stats/cli-versions` 端点：版本分布统计（活跃用户数 + 事件数）
+- Dashboard 工具与技能 Tab 新增客户端版本分布饼图和详情表
+- postinstall 自动注入 hooks，安装后零操作即可开始采集
+- `server.publicUrl` 配置项，支持 Docker/代理部署指定客户端下载地址
+- 自动更新设计文档 `doc/12-auto-update-design.md`
+
+### Changed
+- better-sqlite3 升级 11.x → 12.9.0（SQLite 3.49.2 → 3.53.0）
+- 最低 Node 版本要求从 18 提升到 20
+- CI 测试矩阵更新为 Node 20.x + 22.x
+- 所有时间戳统一使用本地时区（配合 `TZ=Asia/Shanghai`）
+- postinstall 始终覆盖客户端配置（配置由服务端统一控制）
+
+### Fixed
+- MySQL/PostgreSQL 下 SUM 返回字符串导致 token 统计被放大
+- Windows 下自动更新弹出命令行窗口（spawn + windowsHide）
+- 数据库迁移脚本全部改为幂等（hasTable/hasColumn 前置检查）
+- 时区问题：event_time/received_time/sync_time 统一转本地时间
+- 筛选 agent/hostname 时正确排除外部数据
+- getDrilldown 按 model 下钻合并外部数据
+- getRanking 合并外部数据（token/event_count 指标）
+- getSummary user_count 去重跟随筛选器
+
 ## [0.8.0] - 2026-04-15
 
 ### Added
