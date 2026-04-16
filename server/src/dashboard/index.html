@@ -238,6 +238,20 @@
 const API = '/api/v1';
 let activeTab = 'overview';
 let RANKING_LIMIT = 100;
+let userNameMap = {}; // { username: displayName }
+
+/** Format username as "显示名 (username)" or just "username" if no display name. */
+function fmtUser(username) {
+  const name = userNameMap[username];
+  return name ? `${name} (${username})` : username;
+}
+
+async function loadUserNames() {
+  try {
+    const res = await fetch(`${API}/stats/user-names`);
+    if (res.ok) userNameMap = await res.json();
+  } catch {}
+}
 
 // ===== 初始化 =====
 document.getElementById('date').valueAsDate = new Date();
@@ -261,6 +275,7 @@ document.getElementById('period').addEventListener('change', function() {
 
 checkServerStatus();
 checkAuth();
+loadUserNames();
 loadFilterOptions();
 refreshAll();
 
@@ -483,7 +498,7 @@ async function loadAgentDist() {
   try {
     const data = await apiFetch('/stats/ranking', { metric: 'event_count' });
     const chart = echarts.init(document.getElementById('chart-agent-dist'));
-    const items = data.map(d => ({ name: d.username, value: d.metric_value }));
+    const items = data.map(d => ({ name: fmtUser(d.username), value: d.metric_value }));
     chart.setOption({
       tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
       series: [{
@@ -647,7 +662,7 @@ function renderRanking() {
     const rank = i + 1;
     const cls = rank <= 3 ? `rank-${rank}` : 'rank-other';
     html += `<tr><td><span class="rank-badge ${cls}">${rank}</span></td>`;
-    html += `<td class="user-link" onclick="goToDrilldown('${d.username}')">${d.username}</td>`;
+    html += `<td class="user-link" onclick="goToDrilldown('${d.username}')">${esc(fmtUser(d.username))}</td>`;
     for (const col of RANKING_COLUMNS) {
       html += `<td>${fmtK(d[col.key] || 0)}</td>`;
     }
@@ -666,7 +681,7 @@ function goToDrilldown(username) {
     if (opt.value === username) { found = true; break; }
   }
   if (!found) {
-    sel.innerHTML += `<option value="${username}">${username}</option>`;
+    sel.innerHTML += `<option value="${username}">${esc(fmtUser(username))}</option>`;
   }
   sel.value = username;
   loadDrilldown(true);
@@ -681,7 +696,7 @@ async function loadDrilldownUsers() {
     const current = sel.value;
     sel.innerHTML = '<option value="">选择用户...</option>';
     data.forEach(d => {
-      sel.innerHTML += `<option value="${d.username}">${d.username}</option>`;
+      sel.innerHTML += `<option value="${d.username}">${esc(fmtUser(d.username))}</option>`;
     });
     if (current) sel.value = current;
   } catch {}

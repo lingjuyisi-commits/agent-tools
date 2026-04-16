@@ -147,6 +147,18 @@ async function statsRoutes(fastify, opts) {
 
     return query;
   });
+
+  // User display name mapping (from external data)
+  fastify.get('/api/v1/stats/user-names', async (request, reply) => {
+    const rows = await db('daily_stats')
+      .select('username', 'display_name')
+      .whereNotNull('display_name')
+      .andWhere('display_name', '!=', '')
+      .groupBy('username');
+    const map = {};
+    for (const r of rows) map[r.username] = r.display_name;
+    return map;
+  });
 }
 
 module.exports = statsRoutes;
