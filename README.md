@@ -51,22 +51,15 @@ agent-tools-server
 
 ### Step 2：安装客户端
 
-在每台开发者机器上安装客户端并完成初始化：
+打开 Dashboard（`http://your-server:3000`），点击右上角「下载客户端」链接下载安装包，然后：
 
 ```bash
-npm install -g agent-tools
-agent-tools init                                    # 首次初始化（交互式）
-agent-tools init --server http://your-server:3000   # 非交互模式（指定服务器地址）
+npm install -g agent-tools-cli-x.x.x.tgz
 ```
 
-`init` 会自动检测已安装的 Agent 并注入 hooks，完成后即开始自动采集。
+安装完成后**自动配置服务器地址并注入 hooks**，无需手动操作，即刻开始采集。
 
-验证 hooks 是否正常工作：
-
-```bash
-agent-tools test                                    # 端到端测试所有已安装 Agent
-agent-tools test --agent claude-code                # 仅测试指定 Agent
-```
+> 也可以手动初始化：`agent-tools init --server http://your-server:3000`
 
 ### Step 3：打开 Dashboard
 
