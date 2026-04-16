@@ -148,6 +148,35 @@ async function statsRoutes(fastify, opts) {
     return query;
   });
 
+  // Installed users: who installed and their latest version + activity
+  fastify.get('/api/v1/stats/installed-users', async (request, reply) => {
+    const rows = await db('events')
+      .select(
+        'username',
+        db.raw('MAX(agent_version) as latest_version'),
+        db.raw('MAX(event_time) as last_active'),
+        db.raw('COUNT(*) as event_count'),
+        db.raw('MIN(event_time) as first_seen'),
+      )
+      .whereNotNull('username')
+      .groupBy('username')
+      .orderBy('last_active', 'desc');
+
+    // Attach display names
+    const nameRows = await db('daily_stats')
+      .select('username', 'display_name')
+      .whereNotNull('display_name')
+      .andWhere('display_name', '!=', '')
+      .groupBy('username');
+    const nameMap = {};
+    for (const r of nameRows) nameMap[r.username] = r.display_name;
+
+    return rows.map(r => ({
+      ...r,
+      display_name: nameMap[r.username] || null,
+    }));
+  });
+
   // User display name mapping (from external data)
   fastify.get('/api/v1/stats/user-names', async (request, reply) => {
     const rows = await db('daily_stats')
