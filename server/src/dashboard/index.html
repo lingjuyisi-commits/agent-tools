@@ -135,6 +135,10 @@
         <div id="chart-agent-dist" class="chart-container"></div>
       </div>
     </div>
+    <div class="ranking-section">
+      <h3>已安装用户</h3>
+      <div class="ranking-table" id="installed-users-table"></div>
+    </div>
   </div>
 
   <!-- 排名 Tab -->
@@ -445,6 +449,7 @@ function loadTabData(name) {
 async function refreshAll() {
   loadSummary();
   loadTrend();
+  loadInstalledUsers();
   loadTabData(activeTab);
 }
 
@@ -507,6 +512,34 @@ async function loadAgentDist() {
         label: { formatter: '{b}\n{d}%' },
       }],
     }, true);
+  } catch {}
+}
+
+async function loadInstalledUsers() {
+  try {
+    const res = await fetch(`${API}/stats/installed-users`);
+    if (!res.ok) return;
+    const users = await res.json();
+    const table = document.getElementById('installed-users-table');
+    if (users.length === 0) {
+      table.innerHTML = '<div style="padding:16px;color:#999;text-align:center;">暂无数据</div>';
+      return;
+    }
+    let html = '<table><thead><tr><th>用户</th><th>客户端版本</th><th>首次使用</th><th>最后活跃</th><th>事件数</th></tr></thead><tbody>';
+    users.forEach(u => {
+      const name = u.display_name ? `${u.display_name} (${u.username})` : u.username;
+      const firstSeen = u.first_seen ? u.first_seen.slice(0, 10) : '-';
+      const lastActive = u.last_active ? u.last_active.slice(0, 10) : '-';
+      html += `<tr>
+        <td>${esc(name)}</td>
+        <td>${esc(u.latest_version || '未知')}</td>
+        <td>${firstSeen}</td>
+        <td>${lastActive}</td>
+        <td>${fmt(u.event_count)}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    table.innerHTML = html;
   } catch {}
 }
 
