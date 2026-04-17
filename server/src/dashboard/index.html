@@ -537,8 +537,8 @@ async function loadInstalledUsers() {
     let html = '<table><thead><tr><th>用户</th><th>客户端版本</th><th>首次使用</th><th>最后活跃</th><th>事件数</th></tr></thead><tbody>';
     users.forEach(u => {
       const name = u.display_name ? `${u.display_name} (${u.username})` : u.username;
-      const firstSeen = u.first_seen ? u.first_seen.slice(0, 10) : '-';
-      const lastActive = u.last_active ? u.last_active.slice(0, 10) : '-';
+      const firstSeen = u.first_seen ? u.first_seen.slice(0, 16).replace('T', ' ') : '-';
+      const lastActive = u.last_active ? u.last_active.slice(0, 16).replace('T', ' ') : '-';
       html += `<tr>
         <td>${esc(name)}</td>
         <td>${esc(u.latest_version || '未知')}</td>
