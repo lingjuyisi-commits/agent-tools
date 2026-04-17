@@ -77,6 +77,23 @@ try {
     console.log('\n  本地开发:');
     console.log('    agent-tools init --server http://localhost:3000\n');
   }
+
+  // --- Refresh guard if the user previously opted in ---
+  // We do NOT auto-install guard here — it stays opt-in.
+  // But if the user already ran `agent-tools guard install` before, we must
+  // re-register the autostart entry so it points at this version's watcher.js
+  // and uses the current node binary. install() is idempotent.
+  if (os.platform() === 'win32' || os.platform() === 'darwin') {
+    try {
+      const guard = require('../src/guard');
+      if (guard.status().installed) {
+        guard.install();
+        console.log('[agent-tools] guard 已刷新以指向新版本。');
+      }
+    } catch {
+      // Never block install on guard refresh failure.
+    }
+  }
 } catch {
   // Post-install should never fail the installation
 }

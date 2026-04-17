@@ -68,6 +68,18 @@ try {
 
   // --- Remove ~/.agent-tools/ ---
 
+  // --- Remove guard autostart (if installed) ---
+  // Unconditional, idempotent: uninstall() is a no-op when not installed.
+  // Prevents zombie schtasks tasks / LaunchAgent plists from lingering and
+  // spawning failed node invocations after the package is gone.
+  if (os.platform() === 'win32' || os.platform() === 'darwin') {
+    try {
+      require('../src/guard').uninstall();
+    } catch {
+      // Never block uninstall on guard teardown failure.
+    }
+  }
+
   if (fs.existsSync(HOME)) {
     fs.rmSync(HOME, { recursive: true, force: true });
     console.log(`[agent-tools] 已删除 ${HOME}`);
