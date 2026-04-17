@@ -48,13 +48,24 @@ function isProcessAlive(pid) {
 
 function acquireLock() {
   fs.mkdirSync(path.dirname(LOCK_FILE), { recursive: true });
-  if (fs.existsSync(LOCK_FILE)) {
-    const pid = parseInt(fs.readFileSync(LOCK_FILE, 'utf-8'), 10);
-    if (pid && pid !== process.pid && isProcessAlive(pid)) {
-      throw new Error(`guard already running (pid ${pid})`);
+  // Atomic create-or-fail to avoid TOCTOU: two guards racing would both
+  // observe "no lock" via existsSync and both overwrite. `wx` opens
+  // exclusively — if the file exists we fall through to validate the
+  // recorded pid, remove the lock if stale, and retry.
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      fs.writeFileSync(LOCK_FILE, String(process.pid), { flag: 'wx' });
+      return;
+    } catch (err) {
+      if (err.code !== 'EEXIST') throw err;
     }
+    const existing = parseInt(fs.readFileSync(LOCK_FILE, 'utf-8'), 10);
+    if (existing && existing !== process.pid && isProcessAlive(existing)) {
+      throw new Error(`guard already running (pid ${existing})`);
+    }
+    try { fs.unlinkSync(LOCK_FILE); } catch {}
   }
-  fs.writeFileSync(LOCK_FILE, String(process.pid));
+  throw new Error('could not acquire guard lock (contention)');
 }
 
 function releaseLock() {

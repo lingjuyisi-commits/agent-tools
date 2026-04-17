@@ -28,7 +28,13 @@ function buildVbs() {
 
 function install() {
   fs.mkdirSync(VBS_DIR, { recursive: true });
-  fs.writeFileSync(VBS_PATH, buildVbs(), 'utf-8');
+  // Write as UTF-16 LE with BOM. wscript.exe interprets .vbs files as the
+  // system ANSI codepage unless a UTF-16 BOM is present, so UTF-8 paths
+  // containing non-ASCII characters (e.g. 中文 usernames under APPDATA)
+  // would be mangled. UTF-16 LE with BOM is the reliably supported form.
+  const bom = Buffer.from([0xFF, 0xFE]);
+  const body = Buffer.from(buildVbs(), 'utf16le');
+  fs.writeFileSync(VBS_PATH, Buffer.concat([bom, body]));
 
   // If a previous task exists (e.g. left over from an older install), remove it
   // so we don't end up with stale watcher paths.
