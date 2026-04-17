@@ -149,7 +149,12 @@
         <div id="chart-ranking-trend" class="chart-container" style="height:360px;"></div>
       </div>
       <h3>用户排名 <span style="font-weight:normal;font-size:12px;color:#999;">（点击用户名可钻取详情）</span></h3>
+      <div style="display:flex;align-items:center;gap:12px;margin:8px 0;">
+        <input id="ranking-search" type="text" placeholder="搜索用户名或显示名..." oninput="onRankingSearch(this.value)" style="flex:1;max-width:300px;padding:6px 10px;border:1px solid #ccc;border-radius:4px;font-size:13px;">
+        <span id="ranking-total" style="font-size:13px;color:#666;"></span>
+      </div>
       <div class="ranking-table" id="ranking-table"></div>
+      <div id="ranking-pager" style="display:flex;align-items:center;justify-content:center;gap:8px;padding:16px;"></div>
     </div>
   </div>
 
@@ -241,7 +246,6 @@
 <script>
 const API = '/api/v1';
 let activeTab = 'overview';
-let RANKING_LIMIT = 100;
 let userNameMap = {}; // { username: displayName }
 
 /** Format username as "显示名 (username)" or just "username" if no display name. */
@@ -396,8 +400,8 @@ async function checkServerStatus() {
   try {
     const data = await fetch(`${API}/health`).then(r => r.json());
     document.getElementById('server-status').textContent = `DB: ${data.database} | v${data.version} | 运行: ${Math.round(data.uptime)}s`;
-    if (data.dashboard && data.dashboard.rankingLimit) {
-      RANKING_LIMIT = data.dashboard.rankingLimit;
+    if (data.dashboard && data.dashboard.rankingPageSize) {
+      rankingPageSize = data.dashboard.rankingPageSize;
     }
     // Client download link — uses same version as server
     if (data.version) {
@@ -545,8 +549,13 @@ async function loadInstalledUsers() {
 
 // ===== 排名 =====
 let rankingData = [];
+let rankingTotal = 0;
+let rankingPage = 1;
+let rankingPageSize = 50;
 let rankingSortCol = 'token_total';
 let rankingSortAsc = false;
+let rankingSearch = '';
+let rankingSearchTimer = null;
 
 const RANKING_COLUMNS = [
   { key: 'token_total',    label: 'Token 合计' },
@@ -568,14 +577,23 @@ const TREND_COLORS = [
   '#9b59b6', '#1abc9c', '#e74c3c', '#3498db', '#2ecc71', '#f39c12'
 ];
 
-async function loadRanking() {
+async function loadRanking(resetPage) {
+  if (resetPage) rankingPage = 1;
   try {
-    const [allData, trendData] = await Promise.all([
-      apiFetch('/stats/ranking-all', { limit: RANKING_LIMIT }),
+    const [pageData, trendData] = await Promise.all([
+      apiFetch('/stats/ranking-all', {
+        page: rankingPage,
+        pageSize: rankingPageSize,
+        sortBy: rankingSortCol,
+        sortOrder: rankingSortAsc ? 'asc' : 'desc',
+        search: rankingSearch,
+      }),
       loadRankingTrendData(),
     ]);
-    rankingData = allData;
+    rankingData = pageData.data || [];
+    rankingTotal = pageData.total || 0;
     renderRanking();
+    renderRankingPager();
     renderRankingTrend(trendData);
   } catch (e) {
     document.getElementById('ranking-table').innerHTML = `<div class="error">${e.message}</div>`;
@@ -675,15 +693,23 @@ function sortRanking(col) {
     rankingSortCol = col;
     rankingSortAsc = false;
   }
-  renderRanking();
+  loadRanking(true);
+}
+
+function onRankingSearch(value) {
+  rankingSearch = value;
+  clearTimeout(rankingSearchTimer);
+  rankingSearchTimer = setTimeout(() => loadRanking(true), 300);
+}
+
+function gotoRankingPage(page) {
+  rankingPage = page;
+  loadRanking(false);
 }
 
 function renderRanking() {
-  const sorted = [...rankingData].sort((a, b) => {
-    const va = a[rankingSortCol] || 0;
-    const vb = b[rankingSortCol] || 0;
-    return rankingSortAsc ? va - vb : vb - va;
-  });
+  // Display rank number based on page offset (global rank)
+  const startRank = (rankingPage - 1) * rankingPageSize;
 
   let html = '<table><thead><tr><th>#</th><th>用户</th>';
   for (const col of RANKING_COLUMNS) {
@@ -691,18 +717,47 @@ function renderRanking() {
     html += `<th style="cursor:pointer;" onclick="sortRanking('${col.key}')">${col.label}${arrow}</th>`;
   }
   html += '</tr></thead><tbody>';
-  sorted.forEach((d, i) => {
-    const rank = i + 1;
-    const cls = rank <= 3 ? `rank-${rank}` : 'rank-other';
-    html += `<tr><td><span class="rank-badge ${cls}">${rank}</span></td>`;
-    html += `<td class="user-link" onclick="goToDrilldown('${d.username}')">${esc(fmtUser(d.username))}</td>`;
-    for (const col of RANKING_COLUMNS) {
-      html += `<td>${fmtK(d[col.key] || 0)}</td>`;
-    }
-    html += '</tr>';
-  });
+  if (rankingData.length === 0) {
+    html += `<tr><td colspan="${RANKING_COLUMNS.length + 2}" style="text-align:center;padding:24px;color:#999;">暂无数据</td></tr>`;
+  } else {
+    rankingData.forEach((d, i) => {
+      const rank = startRank + i + 1;
+      const cls = rank <= 3 ? `rank-${rank}` : 'rank-other';
+      html += `<tr><td><span class="rank-badge ${cls}">${rank}</span></td>`;
+      html += `<td class="user-link" onclick="goToDrilldown('${d.username}')">${esc(fmtUser(d.username))}</td>`;
+      for (const col of RANKING_COLUMNS) {
+        html += `<td>${fmtK(d[col.key] || 0)}</td>`;
+      }
+      html += '</tr>';
+    });
+  }
   html += '</tbody></table>';
   document.getElementById('ranking-table').innerHTML = html;
+
+  const totalText = `共 ${fmt(rankingTotal)} 个用户`;
+  document.getElementById('ranking-total').textContent = totalText;
+}
+
+function renderRankingPager() {
+  const totalPages = Math.max(1, Math.ceil(rankingTotal / rankingPageSize));
+  const pager = document.getElementById('ranking-pager');
+  if (totalPages <= 1) { pager.innerHTML = ''; return; }
+
+  const btn = (label, page, disabled, active) => {
+    const style = `padding:4px 10px;border:1px solid #ccc;background:${active?'#4a90d9':'#fff'};color:${active?'#fff':'#333'};border-radius:3px;cursor:${disabled?'not-allowed':'pointer'};font-size:13px;opacity:${disabled?0.5:1};`;
+    return `<button style="${style}" ${disabled?'disabled':''} onclick="gotoRankingPage(${page})">${label}</button>`;
+  };
+
+  let html = btn('‹ 上一页', rankingPage - 1, rankingPage <= 1, false);
+  // Show up to 5 page numbers around current
+  const start = Math.max(1, rankingPage - 2);
+  const end = Math.min(totalPages, start + 4);
+  for (let p = start; p <= end; p++) {
+    html += btn(String(p), p, false, p === rankingPage);
+  }
+  html += btn('下一页 ›', rankingPage + 1, rankingPage >= totalPages, false);
+  html += `<span style="margin-left:12px;color:#666;font-size:13px;">第 ${rankingPage} / ${totalPages} 页</span>`;
+  pager.innerHTML = html;
 }
 
 // ===== 点击用户进入钻取 =====

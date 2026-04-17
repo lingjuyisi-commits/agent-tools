@@ -186,7 +186,7 @@ async function getSummary(db, params) {
  */
 async function getRanking(db, params) {
   const metric = params.metric || 'token_total';
-  const limit = parseInt(params.limit, 10) || 20;
+  const limit = parseInt(params.limit, 10) || 2000;
 
   const metricMap = {
     token_total: db.raw('SUM(token_input + token_output) as metric_value'),
@@ -249,10 +249,21 @@ async function getRanking(db, params) {
 
 /**
  * GET /api/v1/stats/ranking-all
- * Returns all metrics per user, merging hook + external data. Sorting is done client-side.
+ * Returns paginated metrics per user, merging hook + external data.
+ * Supports: page, pageSize, sortBy, sortOrder, search (by username/display_name).
  */
+const VALID_SORT_FIELDS = new Set([
+  'token_total','token_input','token_output','session_count','event_count',
+  'turn_count','files_created','files_modified','lines_added','lines_removed',
+  'skill_count','skill_unique','username',
+]);
+
 async function getRankingAll(db, params) {
-  const limit = parseInt(params.limit, 10) || 50;
+  const page = Math.max(1, parseInt(params.page, 10) || 1);
+  const pageSize = Math.min(500, Math.max(1, parseInt(params.pageSize, 10) || 50));
+  const sortBy = VALID_SORT_FIELDS.has(params.sortBy) ? params.sortBy : 'token_total';
+  const sortOrder = params.sortOrder === 'asc' ? 'asc' : 'desc';
+  const search = (params.search || '').trim().toLowerCase();
 
   // 1. Hook data from events
   let hookQuery = db('events')
@@ -321,10 +332,44 @@ async function getRankingAll(db, params) {
     }
   }
 
-  // 4. Sort and limit
-  return Object.values(merged)
-    .sort((a, b) => b.token_total - a.token_total)
-    .slice(0, limit);
+  // 4. Attach display names from external data (for search support)
+  let nameMap = {};
+  try {
+    const nameRows = await db('daily_stats')
+      .select('username', 'display_name')
+      .whereNotNull('display_name')
+      .andWhere('display_name', '!=', '')
+      .groupBy('username');
+    for (const r of nameRows) nameMap[r.username] = r.display_name;
+  } catch {}
+
+  let all = Object.values(merged).map(u => ({
+    ...u,
+    display_name: nameMap[u.username] || null,
+  }));
+
+  // 5. Search filter (case-insensitive, match username or display_name)
+  if (search) {
+    all = all.filter(u =>
+      u.username.toLowerCase().includes(search) ||
+      (u.display_name && u.display_name.toLowerCase().includes(search))
+    );
+  }
+
+  // 6. Sort (descending by default)
+  const dir = sortOrder === 'asc' ? 1 : -1;
+  all.sort((a, b) => {
+    const va = a[sortBy], vb = b[sortBy];
+    if (typeof va === 'string') return va.localeCompare(vb) * dir;
+    return ((va || 0) - (vb || 0)) * dir;
+  });
+
+  // 7. Paginate
+  const total = all.length;
+  const start = (page - 1) * pageSize;
+  const data = all.slice(start, start + pageSize);
+
+  return { data, total, page, pageSize };
 }
 
 /**

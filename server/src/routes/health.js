@@ -10,7 +10,7 @@ async function healthRoutes(fastify, opts) {
       database: config.database.client,
       uptime: process.uptime(),
       dashboard: {
-        rankingLimit: (config.dashboard && config.dashboard.rankingLimit) || 100,
+        rankingPageSize: (config.dashboard && config.dashboard.rankingPageSize) || 50,
       },
     };
   });
