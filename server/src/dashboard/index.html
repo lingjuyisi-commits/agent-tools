@@ -454,6 +454,11 @@ async function refreshAll() {
   loadSummary();
   loadTrend();
   loadInstalledUsers();
+  // Reset pagination state when user refreshes (filters may have changed)
+  rankingPage = 1;
+  rankingSearch = '';
+  const searchInput = document.getElementById('ranking-search');
+  if (searchInput) searchInput.value = '';
   loadTabData(activeTab);
 }
 
@@ -592,6 +597,14 @@ async function loadRanking(resetPage) {
     ]);
     rankingData = pageData.data || [];
     rankingTotal = pageData.total || 0;
+
+    // If current page exceeds available pages (e.g. after filter change), retry on last valid page
+    const totalPages = Math.max(1, Math.ceil(rankingTotal / rankingPageSize));
+    if (rankingPage > totalPages && rankingTotal > 0) {
+      rankingPage = totalPages;
+      return loadRanking(false);
+    }
+
     renderRanking();
     renderRankingPager();
     renderRankingTrend(trendData);
