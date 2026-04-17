@@ -39,6 +39,7 @@ try {
 
   // --- Detect and auto-setup hooks ---
   const { detectAll, setupAll } = require('../src/detector');
+  const claudeCode = require('../src/detector/claude-code');
 
   console.log('\n[agent-tools] 扫描已安装的 AI 编程 Agent...\n');
 
@@ -83,20 +84,15 @@ try {
   // (bundled in default-config.json, propagated via server's buildCustomTgz).
   // Flip it to false server-side and the next auto-update uninstalls guard
   // on every machine. install()/uninstall() are both idempotent.
-  //
-  // Only relevant when Claude Code is the agent being used — guard's whole
-  // job is to protect ~/.claude/settings.json.
   const hasClaudeCode = detected.some(
-    (a) => a.name === 'claude-code' && (a.installed || a.configExists),
+    (a) => a.name === claudeCode.name && (a.installed || a.configExists),
   );
   if ((os.platform() === 'win32' || os.platform() === 'darwin') && hasClaudeCode) {
     let guardEnabled = true;
     try {
       const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
       if (cfg?.guard?.enabled === false) guardEnabled = false;
-    } catch {
-      // No config yet — fall through with the default (enabled).
-    }
+    } catch {}
 
     try {
       const guard = require('../src/guard');

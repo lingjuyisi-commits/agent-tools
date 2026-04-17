@@ -8,6 +8,33 @@ const displayName = 'Claude Code';
 const CONFIG_DIR = path.join(os.homedir(), '.claude');
 const SETTINGS_FILE = path.join(CONFIG_DIR, 'settings.json');
 
+const HOOK_EVENTS = [
+  'SessionStart', 'SessionEnd', 'PreToolUse', 'PostToolUse',
+  'UserPromptSubmit', 'Stop',
+];
+
+// True if the entry (flat or nested form) contains an agent-tools command.
+function isAgentToolsHookEntry(h) {
+  if (!h) return false;
+  if (typeof h.command === 'string' && h.command.includes('agent-tools')) return true;
+  if (Array.isArray(h.hooks)) {
+    return h.hooks.some((i) => i && typeof i.command === 'string' && i.command.includes('agent-tools'));
+  }
+  return false;
+}
+
+// Strict check: every HOOK_EVENT has at least one agent-tools entry.
+// Used by the guard to decide whether settings.json needs re-injection.
+function hasAllAgentToolsHooks(settings) {
+  if (!settings || !settings.hooks) return false;
+  for (const ev of HOOK_EVENTS) {
+    const entries = settings.hooks[ev];
+    if (!Array.isArray(entries) || entries.length === 0) return false;
+    if (!entries.some(isAgentToolsHookEntry)) return false;
+  }
+  return true;
+}
+
 /**
  * Get the installed Claude Code version string (e.g. "2.1.92").
  * Returns null if not installed or version cannot be determined.
@@ -83,17 +110,13 @@ function injectHooks(options = {}) {
     }
   }
 
-  // Find path to universal-hook.js
   const hookScript = path.join(__dirname, '..', 'hooks', 'universal-hook.js');
-
-  // Build hooks config for all supported Claude Code events
-  const hookEvents = ['SessionStart', 'SessionEnd', 'PreToolUse', 'PostToolUse', 'UserPromptSubmit', 'Stop'];
 
   if (!settings.hooks) settings.hooks = {};
 
   const nested = needsNestedFormat();
 
-  for (const event of hookEvents) {
+  for (const event of HOOK_EVENTS) {
     const command = `node "${hookScript}" --agent=claude-code --event=${event}`;
 
     // Build hook entry in the format matching the installed version.
@@ -121,14 +144,7 @@ function injectHooks(options = {}) {
         });
       }
 
-      // Check if agent-tools hook already exists (look inside nested hooks array)
-      const idx = settings.hooks[event].findIndex((h) => {
-        if (h.command && h.command.includes('agent-tools')) return true;   // old format (just in case)
-        if (Array.isArray(h.hooks)) return h.hooks.some(
-          (inner) => inner.command && inner.command.includes('agent-tools'),
-        );
-        return false;
-      });
+      const idx = settings.hooks[event].findIndex(isAgentToolsHookEntry);
       if (idx >= 0) {
         if (options.force) {
           settings.hooks[event][idx] = hookEntry;
@@ -153,9 +169,12 @@ module.exports = {
   isInstalled,
   configExists,
   hasAgentToolsHooks,
+  hasAllAgentToolsHooks,
+  isAgentToolsHookEntry,
   injectHooks,
   getVersion,
   needsNestedFormat,
+  HOOK_EVENTS,
   CONFIG_DIR,
   SETTINGS_FILE,
 };

@@ -10,18 +10,12 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { spawnSync } = require('child_process');
+const { appendLog } = require('../utils/json-logger');
 
 const LOG_FILE = path.join(os.homedir(), '.agent-tools', 'data', 'update-log.json');
 
 function log(entry) {
-  try {
-    const dir = path.dirname(LOG_FILE);
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    const logs = fs.existsSync(LOG_FILE) ? JSON.parse(fs.readFileSync(LOG_FILE, 'utf-8')) : [];
-    logs.push({ ...entry, time: new Date().toISOString() });
-    // Keep last 20 entries
-    fs.writeFileSync(LOG_FILE, JSON.stringify(logs.slice(-20), null, 2));
-  } catch {}
+  appendLog(LOG_FILE, entry, 20);
 }
 
 async function main() {

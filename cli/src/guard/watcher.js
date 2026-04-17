@@ -8,17 +8,14 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const claudeCode = require('../detector/claude-code');
+const { appendLog } = require('../utils/json-logger');
 
-const CLAUDE_DIR    = path.join(os.homedir(), '.claude');
-const SETTINGS_FILE = path.join(CLAUDE_DIR, 'settings.json');
+const CLAUDE_DIR    = claudeCode.CONFIG_DIR;
+const SETTINGS_FILE = claudeCode.SETTINGS_FILE;
 const HOME          = path.join(os.homedir(), '.agent-tools');
 const LOCK_FILE     = path.join(HOME, '.guard.lock');
 const LOG_FILE      = path.join(HOME, 'data', 'guard-log.json');
-
-const HOOK_EVENTS = [
-  'SessionStart', 'SessionEnd', 'PreToolUse', 'PostToolUse',
-  'UserPromptSubmit', 'Stop',
-];
 
 const DEBOUNCE_MS           = 500;
 const HEARTBEAT_MS          = 5 * 60 * 1000;
@@ -31,19 +28,8 @@ let debounceTimer   = null;
 let heartbeatTimer  = null;
 let currentWatcher  = null;
 
-// ===== Logging =====
-
 function log(entry) {
-  try {
-    fs.mkdirSync(path.dirname(LOG_FILE), { recursive: true });
-    let logs = [];
-    if (fs.existsSync(LOG_FILE)) {
-      try { logs = JSON.parse(fs.readFileSync(LOG_FILE, 'utf-8')); } catch {}
-      if (!Array.isArray(logs)) logs = [];
-    }
-    logs.push({ ...entry, time: new Date().toISOString(), pid: process.pid });
-    fs.writeFileSync(LOG_FILE, JSON.stringify(logs.slice(-MAX_LOG_ENTRIES), null, 2));
-  } catch {}
+  appendLog(LOG_FILE, { ...entry, pid: process.pid }, MAX_LOG_ENTRIES);
 }
 
 // ===== Lock (prevent multiple instances) =====
@@ -80,40 +66,21 @@ function releaseLock() {
 
 // ===== Heal logic =====
 
-function hooksIntact(settings) {
-  if (!settings || !settings.hooks) return false;
-  for (const ev of HOOK_EVENTS) {
-    const entries = settings.hooks[ev];
-    if (!Array.isArray(entries) || entries.length === 0) return false;
-    const hasOurs = entries.some((h) => {
-      if (h && typeof h.command === 'string' && h.command.includes('agent-tools')) return true;
-      if (h && Array.isArray(h.hooks)) {
-        return h.hooks.some((i) => i && typeof i.command === 'string' && i.command.includes('agent-tools'));
-      }
-      return false;
-    });
-    if (!hasOurs) return false;
-  }
-  return true;
-}
-
 function checkAndHeal(reason) {
-  // Skip if we just wrote settings ourselves — avoid reacting to our own write
+  // Suppress feedback loop: our own setupAll write also fires fs.watch.
   if (Date.now() - lastSelfWriteAt < SELF_WRITE_IGNORE_MS) return;
 
-  // If Claude Code has never run, no settings.json exists yet. Nothing to heal.
-  if (!fs.existsSync(SETTINGS_FILE)) return;
-
-  let settings = null;
+  let settings;
   try {
     settings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf-8'));
   } catch (err) {
-    log({ reason, event: 'settings-parse-failed', error: err.message });
+    if (err.code === 'ENOENT') return;
     // Don't touch a file we can't parse — user may have a syntax error in progress.
+    log({ reason, event: 'settings-parse-failed', error: err.message });
     return;
   }
 
-  if (hooksIntact(settings)) return;
+  if (claudeCode.hasAllAgentToolsHooks(settings)) return;
 
   try {
     const { setupAll } = require('../detector');
@@ -197,4 +164,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { main, checkAndHeal, hooksIntact };
+module.exports = { main };
