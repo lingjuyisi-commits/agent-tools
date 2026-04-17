@@ -17,16 +17,18 @@ const HOME          = path.join(os.homedir(), '.agent-tools');
 const LOCK_FILE     = path.join(HOME, '.guard.lock');
 const LOG_FILE      = path.join(HOME, 'data', 'guard-log.json');
 
-const DEBOUNCE_MS           = 500;
-const HEARTBEAT_MS          = 5 * 60 * 1000;
-const SELF_WRITE_IGNORE_MS  = 10 * 1000;
-const MAX_LOG_ENTRIES       = 100;
-const WATCH_RETRY_MS        = 30 * 1000;
+const DEBOUNCE_MS            = 500;
+const HEARTBEAT_MS           = 5 * 60 * 1000;
+const SELF_WRITE_IGNORE_MS   = 10 * 1000;
+const MAX_LOG_ENTRIES        = 100;
+const WATCH_RETRY_MIN_MS     = 30 * 1000;
+const WATCH_RETRY_MAX_MS     = 5 * 60 * 1000;
 
 let lastSelfWriteAt = 0;
 let debounceTimer   = null;
 let heartbeatTimer  = null;
 let currentWatcher  = null;
+let nextRetryMs     = WATCH_RETRY_MIN_MS;
 
 function log(entry) {
   appendLog(LOG_FILE, { ...entry, pid: process.pid }, MAX_LOG_ENTRIES);
@@ -84,8 +86,10 @@ function checkAndHeal(reason) {
 
   try {
     const { setupAll } = require('../detector');
-    const results = setupAll({ force: true });
+    // Set BEFORE the write so any fs.watch event fired during setupAll is
+    // suppressed. If the write throws, the next heartbeat retries anyway.
     lastSelfWriteAt = Date.now();
+    const results = setupAll({ force: true });
     log({ reason, event: 'healed', results });
   } catch (err) {
     log({ reason, event: 'heal-failed', error: err.message });
@@ -102,11 +106,15 @@ function scheduleHeal(reason) {
 
 // ===== Watcher =====
 
+function scheduleRetry() {
+  setTimeout(startWatcher, nextRetryMs);
+  nextRetryMs = Math.min(nextRetryMs * 2, WATCH_RETRY_MAX_MS);
+}
+
 function startWatcher() {
   if (currentWatcher) return;
   if (!fs.existsSync(CLAUDE_DIR)) {
-    // Claude Code not yet installed / run — retry later.
-    setTimeout(startWatcher, WATCH_RETRY_MS);
+    scheduleRetry();
     return;
   }
 
@@ -122,12 +130,13 @@ function startWatcher() {
       log({ event: 'watcher-error', error: err.message });
       try { currentWatcher.close(); } catch {}
       currentWatcher = null;
-      setTimeout(startWatcher, WATCH_RETRY_MS);
+      scheduleRetry();
     });
     log({ event: 'watcher-started', dir: CLAUDE_DIR });
+    nextRetryMs = WATCH_RETRY_MIN_MS;
   } catch (err) {
     log({ event: 'watcher-start-failed', error: err.message });
-    setTimeout(startWatcher, WATCH_RETRY_MS);
+    scheduleRetry();
   }
 }
 
@@ -145,6 +154,9 @@ function main() {
   log({ event: 'startup' });
 
   const cleanup = () => {
+    if (heartbeatTimer) clearInterval(heartbeatTimer);
+    if (debounceTimer)  clearTimeout(debounceTimer);
+    if (currentWatcher) { try { currentWatcher.close(); } catch {} }
     releaseLock();
     process.exit(0);
   };

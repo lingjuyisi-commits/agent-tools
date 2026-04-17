@@ -13,13 +13,15 @@ const HOOK_EVENTS = [
   'UserPromptSubmit', 'Stop',
 ];
 
-// True if the entry (flat or nested form) contains an agent-tools command.
+// True if the entry (flat or nested form) is an agent-tools hook.
+// Matches the universal-hook.js filename rather than the looser string
+// "agent-tools" — avoids false-positive hits on unrelated user hooks that
+// happen to have "agent-tools" in their command path.
 function isAgentToolsHookEntry(h) {
   if (!h) return false;
-  if (typeof h.command === 'string' && h.command.includes('agent-tools')) return true;
-  if (Array.isArray(h.hooks)) {
-    return h.hooks.some((i) => i && typeof i.command === 'string' && i.command.includes('agent-tools'));
-  }
+  const isOurs = (cmd) => typeof cmd === 'string' && cmd.includes('universal-hook.js');
+  if (isOurs(h.command)) return true;
+  if (Array.isArray(h.hooks)) return h.hooks.some((i) => i && isOurs(i.command));
   return false;
 }
 
