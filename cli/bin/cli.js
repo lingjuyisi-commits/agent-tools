@@ -114,6 +114,42 @@ program
     }
   });
 
+const guardCmd = program
+  .command('guard')
+  .description('管理 hook 守护进程（防止 cc-switch 等工具抹掉 settings.json 里的钩子）');
+
+guardCmd
+  .command('install')
+  .description('安装守护进程为用户级开机自启服务')
+  .action(async () => {
+    const { runGuard } = require('../src/cli/guard');
+    await runGuard('install');
+  });
+
+guardCmd
+  .command('uninstall')
+  .description('卸载守护进程的开机自启')
+  .action(async () => {
+    const { runGuard } = require('../src/cli/guard');
+    await runGuard('uninstall');
+  });
+
+guardCmd
+  .command('status')
+  .description('查看守护进程安装状态')
+  .action(async () => {
+    const { runGuard } = require('../src/cli/guard');
+    await runGuard('status');
+  });
+
+guardCmd
+  .command('run')
+  .description('前台运行守护进程（供自启脚本调用或手动调试）')
+  .action(async () => {
+    const { runGuard } = require('../src/cli/guard');
+    await runGuard('run');
+  });
+
 program
   .command('test')
   .description('Test hook collection by running real agent tasks in a temporary environment')
