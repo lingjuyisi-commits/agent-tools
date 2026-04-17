@@ -1,6 +1,6 @@
 {
   "name": "agent-tools",
-  "version": "0.8.5",
+  "version": "0.8.6",
   "description": "Usage tracking tool for AI coding agents (Claude Code, CodeBuddy, etc.)",
   "bin": {
     "agent-tools": "./bin/cli.js"

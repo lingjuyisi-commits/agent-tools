@@ -15,6 +15,24 @@
 
 ## [Unreleased]
 
+## [0.8.6] - 2026-04-16
+
+### Added
+- 用户排名表支持分页、搜索（用户名或显示名）、服务端排序
+- 概览页新增「已安装用户」表格（用户/版本/首次使用/最后活跃/事件数）
+- `/api/v1/stats/installed-users` 端点：已安装用户列表
+- `/api/v1/stats/user-names` 端点：用户显示名映射
+- 用户名统一展示为「显示名 (username)」格式
+
+### Changed
+- `getRankingAll` 从全量返回改为分页返回 `{ data, total, page, pageSize }`
+- 排名相关配置从 `rankingLimit` 改为 `rankingPageSize`（默认 50）
+- 客户端安装说明简化（自动配置 + 自动注入 hooks）
+
+### Fixed
+- 切换筛选器后停留在错误页码的问题
+- `page > totalPages` 时显示空白（自动回退到最后有效页）
+
 ## [0.8.5] - 2026-04-16
 
 ### Added
