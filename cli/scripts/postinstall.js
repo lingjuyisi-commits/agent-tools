@@ -55,11 +55,13 @@ try {
       console.log(`    + ${a.name} (${parts.join(', ')})`);
     }
 
-    // Auto-inject hooks for all detected agents
+    // Auto-inject hooks for all detected agents.
+    // force: true ensures hook script paths are refreshed on every install,
+    // so upgrades don't leave stale absolute paths pointing to the old version.
     if (autoConfigured || fs.existsSync(CONFIG_FILE)) {
       console.log('\n  自动注入 hooks...');
       try {
-        setupAll();
+        setupAll({ force: true });
         console.log('  hooks 注入完成。\n');
       } catch {
         console.log('  hooks 注入失败，请手动运行: agent-tools setup\n');
