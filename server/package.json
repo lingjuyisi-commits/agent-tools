@@ -1,6 +1,6 @@
 {
   "name": "agent-tools-server",
-  "version": "0.8.6",
+  "version": "0.8.7",
   "description": "Central statistics server for AI coding agent usage tracking",
   "bin": {
     "agent-tools-server": "./bin/server.js"

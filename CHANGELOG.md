@@ -15,6 +15,26 @@
 
 ## [Unreleased]
 
+## [0.8.7] - 2026-04-17
+
+### Added
+- Guard 守护进程：长驻 node watcher 监控 `~/.claude/settings.json`，被 cc-switch 等外部工具抹掉钩子时自动重新注入
+- `agent-tools guard install|uninstall|status|run` 子命令
+- `default-config.json` 新增 `guard.enabled`（默认 `true`）作为服务端远程 kill switch
+- Windows 通过 schtasks ONLOGON + VBS launcher（UTF-16 LE 编码，兼容中文用户名路径）自启
+- macOS 通过 LaunchAgent（RunAtLoad + KeepAlive）自启
+- `cli/src/utils/json-logger.js`：rolling JSON 日志工具，watcher 与 auto-update worker 共用
+- `doc/13-hook-protection-design.md`：hook 保护与自愈的设计文档与远程关停操作手册
+
+### Fixed
+- 升级后 Claude Code 钩子路径未刷新：`postinstall` 里 `setupAll()` 改为 `setupAll({ force: true })`，覆盖旧的 `universal-hook.js` 绝对路径
+- `isAgentToolsHookEntry` 改为匹配 `universal-hook.js` 文件名而非 `agent-tools` 子串，避免误识别用户自己带 `agent-tools` 字样的钩子
+- `acquireLock` 改用 `{ flag: 'wx' }` 原子创建，消除两个 guard 同时启动时的 TOCTOU 竞争
+
+### Changed
+- Windows/macOS 且检测到 Claude Code 时，`postinstall` 默认安装 guard；`preuninstall` 无条件卸载，避免残留 schtasks/LaunchAgent
+- Watcher 重试从固定 30s 改为指数退避，30s 起上限 5min，成功 attach 后复位
+
 ## [0.8.6] - 2026-04-16
 
 ### Added
