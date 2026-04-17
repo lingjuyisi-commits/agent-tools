@@ -78,20 +78,37 @@ try {
     console.log('    agent-tools init --server http://localhost:3000\n');
   }
 
-  // --- Refresh guard if the user previously opted in ---
-  // We do NOT auto-install guard here — it stays opt-in.
-  // But if the user already ran `agent-tools guard install` before, we must
-  // re-register the autostart entry so it points at this version's watcher.js
-  // and uses the current node binary. install() is idempotent.
-  if (os.platform() === 'win32' || os.platform() === 'darwin') {
+  // --- Install / refresh / disable guard per config ---
+  // Default-on with a server-controlled kill switch: config.guard.enabled
+  // (bundled in default-config.json, propagated via server's buildCustomTgz).
+  // Flip it to false server-side and the next auto-update uninstalls guard
+  // on every machine. install()/uninstall() are both idempotent.
+  //
+  // Only relevant when Claude Code is the agent being used — guard's whole
+  // job is to protect ~/.claude/settings.json.
+  const hasClaudeCode = detected.some(
+    (a) => a.name === 'claude-code' && (a.installed || a.configExists),
+  );
+  if ((os.platform() === 'win32' || os.platform() === 'darwin') && hasClaudeCode) {
+    let guardEnabled = true;
+    try {
+      const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+      if (cfg?.guard?.enabled === false) guardEnabled = false;
+    } catch {
+      // No config yet — fall through with the default (enabled).
+    }
+
     try {
       const guard = require('../src/guard');
-      if (guard.status().installed) {
+      if (guardEnabled) {
         guard.install();
-        console.log('[agent-tools] guard 已刷新以指向新版本。');
+        console.log('[agent-tools] guard 已启用（防止外部工具抹掉 ~/.claude/settings.json 里的钩子）。');
+      } else {
+        guard.uninstall();
+        console.log('[agent-tools] guard 已按配置禁用。');
       }
-    } catch {
-      // Never block install on guard refresh failure.
+    } catch (err) {
+      console.log(`[agent-tools] guard 配置失败（已忽略）: ${err && err.message}`);
     }
   }
 } catch {

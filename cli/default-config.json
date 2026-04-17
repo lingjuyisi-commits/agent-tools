@@ -1,4 +1,5 @@
 {
   "server": { "url": "" },
-  "sync": { "batchSize": 100, "intervalSeconds": 300 }
+  "sync": { "batchSize": 100, "intervalSeconds": 300 },
+  "guard": { "enabled": true }
 }
