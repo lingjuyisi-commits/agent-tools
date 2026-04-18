@@ -2,6 +2,8 @@
  * Admin routes — CRUD for allowed_users whitelist.
  * All routes require admin role (enforced by preHandler hook).
  */
+const { getProfilesNameMap } = require('../services/user-profile-service');
+
 async function adminRoutes(fastify, opts) {
   const { db } = opts;
 
@@ -17,9 +19,12 @@ async function adminRoutes(fastify, opts) {
     }
   });
 
-  // List all allowed users
+  // List all allowed users. name is overlaid from user_profiles when present,
+  // otherwise falls back to the value stored in allowed_users.
   fastify.get('/api/v1/admin/users', async () => {
-    return db('allowed_users').select('*').orderBy('created_at', 'asc');
+    const users = await db('allowed_users').select('*').orderBy('created_at', 'asc');
+    const profileNames = await getProfilesNameMap(db);
+    return users.map((u) => ({ ...u, name: profileNames[u.login] || u.name }));
   });
 
   // Add a user to whitelist

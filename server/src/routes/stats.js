@@ -7,6 +7,7 @@ const {
   getRankingTrend,
   computeDateRange
 } = require('../services/stats-service');
+const { getDisplayNameMap } = require('../services/user-profile-service');
 
 async function statsRoutes(fastify, opts) {
   const { db } = opts;
@@ -162,31 +163,17 @@ async function statsRoutes(fastify, opts) {
       .groupBy('username')
       .orderBy('last_active', 'desc');
 
-    // Attach display names
-    const nameRows = await db('daily_stats')
-      .select('username', 'display_name')
-      .whereNotNull('display_name')
-      .andWhere('display_name', '!=', '')
-      .groupBy('username');
-    const nameMap = {};
-    for (const r of nameRows) nameMap[r.username] = r.display_name;
-
+    const nameMap = await getDisplayNameMap(db);
     return rows.map(r => ({
       ...r,
       display_name: nameMap[r.username] || null,
     }));
   });
 
-  // User display name mapping (from external data)
+  // User display name mapping — user_profiles (authoritative) over
+  // daily_stats.display_name (fallback for users we haven't imported yet).
   fastify.get('/api/v1/stats/user-names', async (request, reply) => {
-    const rows = await db('daily_stats')
-      .select('username', 'display_name')
-      .whereNotNull('display_name')
-      .andWhere('display_name', '!=', '')
-      .groupBy('username');
-    const map = {};
-    for (const r of rows) map[r.username] = r.display_name;
-    return map;
+    return getDisplayNameMap(db);
   });
 }
 

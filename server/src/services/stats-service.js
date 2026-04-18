@@ -1,4 +1,5 @@
 const { localDate } = require('../utils/date');
+const { getDisplayNameMap } = require('./user-profile-service');
 
 /** Ensure a value from DB is a number (MySQL/PG may return string for SUM). */
 function num(v) { return Number(v) || 0; }
@@ -332,16 +333,8 @@ async function getRankingAll(db, params) {
     }
   }
 
-  // 4. Attach display names from external data (for search support)
-  let nameMap = {};
-  try {
-    const nameRows = await db('daily_stats')
-      .select('username', 'display_name')
-      .whereNotNull('display_name')
-      .andWhere('display_name', '!=', '')
-      .groupBy('username');
-    for (const r of nameRows) nameMap[r.username] = r.display_name;
-  } catch {}
+  // 4. Attach display names (user_profiles overlays daily_stats; see user-profile-service)
+  const nameMap = await getDisplayNameMap(db);
 
   let all = Object.values(merged).map(u => ({
     ...u,
