@@ -226,6 +226,7 @@
           <option value="hostname">主机名</option>
           <option value="agent">Agent</option>
           <option value="model">模型</option>
+          <option value="skill_name">Skill</option>
         </select>
       </div>
       <div class="charts-grid">
@@ -1059,7 +1060,7 @@ async function loadDrilldown(autoGroup) {
       }],
     }, true);
 
-    const colLabels = { hostname: '主机名', agent: 'Agent', model: '模型' };
+    const colLabels = { hostname: '主机名', agent: 'Agent', model: '模型', skill_name: 'Skill' };
     let html = `<table><thead><tr><th>${colLabels[drilldown] || drilldown}</th><th>事件数</th><th>会话数</th><th>Token 输入</th><th>Token 输出</th><th>Token 合计</th></tr></thead><tbody>`;
     data.forEach(d => {
       html += `<tr>
