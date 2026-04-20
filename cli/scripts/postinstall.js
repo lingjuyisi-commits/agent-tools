@@ -79,29 +79,59 @@ try {
     console.log('    agent-tools init --server http://localhost:3000\n');
   }
 
-  // --- Install / refresh / disable guard per config ---
-  // Default-on with a server-controlled kill switch: config.guard.enabled
-  // (bundled in default-config.json, propagated via server's buildCustomTgz).
-  // Flip it to false server-side and the next auto-update uninstalls guard
-  // on every machine. install()/uninstall() are both idempotent.
+  // --- Guard + cc-switch branching ---
+  //
+  // Layered controls:
+  //   1. config.guard.enabled (server-side kill switch) — if false, always uninstall.
+  //   2. cc-switch detection — if user already runs cc-switch ≥ CC_SWITCH_MIN_VERSION
+  //      (hooks safe), silently skip guard and clean up any prior install.
+  //   3. Otherwise — install guard and nudge the user about cc-switch.
+  //
+  // Only applies on Windows/macOS with Claude Code detected: guard's whole job
+  // is to protect ~/.claude/settings.json.
+  const CC_SWITCH_MIN_VERSION = '3.12.0';
+
   const hasClaudeCode = detected.some(
     (a) => a.name === claudeCode.name && (a.installed || a.configExists),
   );
   if ((os.platform() === 'win32' || os.platform() === 'darwin') && hasClaudeCode) {
     let guardEnabled = true;
+    let downloadUrl = '';
     try {
       const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
       if (cfg?.guard?.enabled === false) guardEnabled = false;
+      if (typeof cfg?.guard?.ccSwitchDownloadUrl === 'string') {
+        downloadUrl = cfg.guard.ccSwitchDownloadUrl;
+      }
     } catch {}
 
     try {
       const guard = require('../src/guard');
-      if (guardEnabled) {
-        guard.install();
-        console.log('[agent-tools] guard 已启用（防止外部工具抹掉 ~/.claude/settings.json 里的钩子）。');
-      } else {
+
+      if (!guardEnabled) {
         guard.uninstall();
         console.log('[agent-tools] guard 已按配置禁用。');
+      } else {
+        const ccSwitch = require('../src/detector/cc-switch').detect();
+        const { versionGte } = require('../src/utils/semver');
+
+        if (ccSwitch.installed && versionGte(ccSwitch.version, CC_SWITCH_MIN_VERSION)) {
+          // Scenario B: user already runs a safe cc-switch. Silent cleanup.
+          guard.uninstall();
+        } else if (ccSwitch.installed) {
+          // Scenario A: user has cc-switch but it's an old, hook-clobbering version.
+          guard.install();
+          console.log(`[agent-tools] 检测到 cc-switch v${ccSwitch.version}，请升级到 ≥ ${CC_SWITCH_MIN_VERSION}`);
+          console.log('              （修复了覆盖 settings.json 钩子的问题）。');
+          if (downloadUrl) console.log(`              下载: ${downloadUrl}`);
+          console.log('              guard 已临时启用守护。升级后执行 `agent-tools guard uninstall` 关闭。');
+        } else {
+          // Scenario C: cc-switch not detected. Nudge install + keep guard on.
+          guard.install();
+          console.log(`[agent-tools] 未检测到 cc-switch，请安装 ≥ ${CC_SWITCH_MIN_VERSION}。`);
+          if (downloadUrl) console.log(`              下载: ${downloadUrl}`);
+          console.log('              guard 已启用，保护 ~/.claude/settings.json 的钩子不被覆盖。');
+        }
       }
     } catch (err) {
       console.log(`[agent-tools] guard 配置失败（已忽略）: ${err && err.message}`);

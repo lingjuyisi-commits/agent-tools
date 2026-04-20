@@ -2,6 +2,7 @@ const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
+const { versionGte } = require('../utils/semver');
 
 const name = 'claude-code';
 const displayName = 'Claude Code';
@@ -48,19 +49,6 @@ function getVersion() {
     const match = output.match(/^(\d+\.\d+\.\d+)/);
     return match ? match[1] : null;
   } catch { return null; }
-}
-
-/**
- * Compare two semver strings. Returns true if `ver` >= `minVer`.
- */
-function versionGte(ver, minVer) {
-  const a = ver.split('.').map(Number);
-  const b = minVer.split('.').map(Number);
-  for (let i = 0; i < 3; i++) {
-    if ((a[i] || 0) > (b[i] || 0)) return true;
-    if ((a[i] || 0) < (b[i] || 0)) return false;
-  }
-  return true; // equal
 }
 
 /**
