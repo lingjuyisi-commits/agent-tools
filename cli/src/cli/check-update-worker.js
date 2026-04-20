@@ -14,6 +14,38 @@ const { appendLog } = require('../utils/json-logger');
 
 const LOG_FILE = path.join(os.homedir(), '.agent-tools', 'data', 'update-log.json');
 
+// Climb from __dirname to find the package root, then derive {prefix}/bin/npm.
+// Handles nvm, homebrew, system npm, and Windows without relying on PATH.
+function findNpmByInstallPath() {
+  let dir = __dirname;
+  let pkgRoot = null;
+  for (let i = 0; i < 8; i++) {
+    if (fs.existsSync(path.join(dir, 'package.json'))) { pkgRoot = dir; break; }
+    const parent = path.dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  if (!pkgRoot) return null;
+
+  const nodeModulesDir = path.dirname(pkgRoot);
+  if (path.basename(nodeModulesDir) !== 'node_modules') return null;
+
+  // prefix/node_modules/pkg  → prefix/bin/npm
+  // prefix/lib/node_modules/pkg → prefix/bin/npm  (Linux/Mac standard layout)
+  const libOrPrefix = path.dirname(nodeModulesDir);
+  const candidates = process.platform === 'win32'
+    ? [path.join(libOrPrefix, 'npm.cmd')]
+    : [
+        path.join(libOrPrefix, 'bin', 'npm'),
+        path.join(path.dirname(libOrPrefix), 'bin', 'npm'),
+      ];
+
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
+
 function log(entry) {
   appendLog(LOG_FILE, entry, 20);
 }
@@ -32,15 +64,14 @@ async function main() {
     const buffer = Buffer.from(await res.arrayBuffer());
     fs.writeFileSync(tgzPath, buffer);
 
-    // Use the npm recorded at install time so the update lands in the same
-    // global prefix — making the new version take effect immediately without
-    // restarting the terminal. Falls back to the sibling npm of the current
-    // node binary, then plain 'npm' as last resort.
+    // Find the npm that owns this package's install location so the update
+    // lands in the same global prefix — making the new version take effect
+    // immediately without restarting the terminal.
     let npmCmd = 'npm';
     try {
-      const cfg = require('../utils/config').load();
-      if (cfg?._npmBin && fs.existsSync(cfg._npmBin)) {
-        npmCmd = `"${cfg._npmBin}"`;
+      const discovered = findNpmByInstallPath();
+      if (discovered) {
+        npmCmd = `"${discovered}"`;
       } else {
         const siblingNpm = path.join(path.dirname(process.execPath), 'npm');
         if (fs.existsSync(siblingNpm)) npmCmd = `"${siblingNpm}"`;

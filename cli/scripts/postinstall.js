@@ -23,16 +23,11 @@ try {
     const serverUrl = defaultCfg?.server?.url;
 
     if (serverUrl) {
-      // Record the npm binary used for this install so the auto-update worker
-      // can reinstall into the exact same global prefix, making updates take
-      // effect immediately without restarting the terminal.
-      const npmBin = path.join(path.dirname(process.execPath), 'npm');
       const cfg = {
         ...defaultCfg,
         initialized: true,
         initTime: new Date().toISOString(),
         autoConfigured: true,
-        _npmBin: fs.existsSync(npmBin) ? npmBin : 'npm',
       };
       fs.mkdirSync(HOME, { recursive: true });
       fs.mkdirSync(DATA_DIR, { recursive: true });
