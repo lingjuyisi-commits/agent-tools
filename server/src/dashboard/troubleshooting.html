@@ -42,6 +42,7 @@
         <li><a href="#scene-report-ccswitch">被 cc-switch 抹钩子的专项处理</a></li>
       </ul>
     </li>
+    <li><a href="#feedback">上述都搞不定？在 GitHub 提 issue</a></li>
   </ol>
 </div>
 
@@ -174,6 +175,25 @@ cat ~/.agent-tools/data/guard-log.json   # 如果启用了 guard</code></pre>
 agent-tools guard status</code></pre>
 <p>查看 guard 日志（有 <code>"event": "healed"</code> 的条目就说明在工作）：</p>
 <pre><code>cat ~/.agent-tools/data/guard-log.json</code></pre>
+
+<h2 id="feedback">上述都搞不定？在 GitHub 提 issue</h2>
+
+<p>可以直接到 <a href="https://github.com/lingjuyisi-commits/agent-tools/issues" target="_blank" rel="noopener">
+  github.com/lingjuyisi-commits/agent-tools/issues
+</a> 提 issue 反馈。</p>
+
+<p>为了帮你更快定位，issue 里请附上：</p>
+<ul>
+  <li><code>agent-tools --version</code> 的输出</li>
+  <li>操作系统 / 版本（macOS 14.x / Windows 11 / Ubuntu 22.04 之类）</li>
+  <li>相关日志片段：
+    <ul>
+      <li><code>~/.agent-tools/data/update-log.json</code>（自升级记录）</li>
+      <li><code>~/.agent-tools/data/guard-log.json</code>（如果启用了 guard）</li>
+    </ul>
+  </li>
+  <li>复现步骤（装完直接就不上报？还是用过一阵才没的？）</li>
+</ul>
 
 <a href="/dashboard/" class="back">← 返回 Dashboard</a>
 
