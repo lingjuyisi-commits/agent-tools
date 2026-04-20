@@ -73,15 +73,27 @@
 </div>
 
 <h3>方案 A（推荐）：把钩子加到 cc-switch 通用配置</h3>
-<p>一次配置，长期有效。cc-switch 每次切供应商时会把通用配置叠加到 settings.json 上，钩子就不会丢。</p>
+<p>一次配置，长期有效。cc-switch 每次切供应商时会把通用配置作为 runtime overlay 叠加到 live <code>settings.json</code> 上，钩子就不会丢。</p>
+
+<div class="note">
+  <strong>前置</strong>：先执行 <code>agent-tools setup --force</code> 确认钩子已注入到 <code>~/.claude/settings.json</code>。
+  下面的"从当前供应商提取"会从这份 live 文件读取，所以必须先有钩子再提取。
+</div>
+
 <ol>
   <li>升级 cc-switch 到 <strong>v3.12.0 或更高版本</strong>（v3.11.0 有已知 bug，要跳过）。</li>
-  <li>打开 cc-switch → 侧边栏 <strong>通用配置</strong>。</li>
-  <li>点 <strong>"从当前供应商提取"</strong>，把当前 <code>settings.json</code> 里的 <code>hooks</code> 字段拉进来。</li>
-  <li>确认提取出来的 JSON 里每个事件下面都有 <code>universal-hook.js</code> 的 command。</li>
-  <li>保存。</li>
+  <li>打开 cc-switch，找到<strong>当前正在使用的供应商卡片</strong>，hover 露出操作按钮，点 <strong>"编辑"</strong>。</li>
+  <li>在编辑面板里切到 <strong>"通用配置面板"</strong>。</li>
+  <li>点 <strong>"从当前供应商提取"</strong> —— cc-switch 会把 <code>settings.json</code> 里除了 API Key / endpoint 之外的所有字段拉进来，包括我们注入的 <code>hooks</code>。</li>
+  <li>确认提取出来的 JSON 里每个事件下面都出现了 <code>universal-hook.js</code> 的 command。</li>
+  <li>点 <strong>"保存"</strong>。通用配置立即生效，不需要重启 cc-switch 或 CLI。</li>
 </ol>
-<p>之后任何时候切 key，通用配置会覆盖到 settings.json，钩子一直在，数据不中断。</p>
+
+<p>之后：</p>
+<ul>
+  <li>任何时候切 key → 通用配置作为 overlay 叠到 <code>settings.json</code>，钩子一直在。</li>
+  <li>创建新供应商时，<strong>"写入通用配置"</strong> 复选框默认勾上 —— 保持勾选就好，钩子会跟着新 provider 一起生效。</li>
+</ul>
 
 <h3>方案 B：让 guard 守护进程兜底</h3>
 <p>没方便配通用配置？guard 会监听 <code>~/.claude/settings.json</code>，钩子一被抹就重新注入。</p>
