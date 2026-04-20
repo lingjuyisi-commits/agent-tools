@@ -92,10 +92,7 @@ npm install -g &lt;tgz&gt;</code></pre>
 { "guard": { "enabled": false }, ... }</code></pre>
     然后下次自升级 postinstall 会跑 <code>guard.uninstall()</code> 清掉残留。
   </li>
-  <li><strong>网络到不了 server</strong>：default-config.json 里 <code>server.url</code> 为空，postinstall 只完成本地配置文件但不会自动注入 hook。手动补：
-    <pre><code>agent-tools init --server &lt;your server url&gt;
-agent-tools setup --force</code></pre>
-  </li>
+  <li><strong>本地 <code>server.url</code> 为空</strong>：正常情况下 server 打包时会自动填进来。如果你的 <code>~/.agent-tools/config.json</code> 里 <code>server.url</code> 是空字符串，说明你装的这个 tarball 构建时没配好 server 地址。联系管理员重新打包 + 重新分发，不要手动改本地配置（下次自升级又会被覆盖）。</li>
 </ul>
 
 <h3>1.4 装完了之后呢</h3>
