@@ -67,7 +67,11 @@ async function runCheckUpdate(options) {
     fs.writeFileSync(tgzPath, buffer);
 
     console.log('  正在安装...');
-    execSync(`npm install -g "${tgzPath}"`, { stdio: 'inherit' });
+    try {
+      execSync(`npm install -g --prefer-offline "${tgzPath}"`, { stdio: 'inherit' });
+    } catch {
+      execSync(`npm install -g "${tgzPath}"`, { stdio: 'inherit' });
+    }
     console.log(chalk.green(`\n  ✓ 已成功更新到 v${latest}。\n`));
   } catch (err) {
     console.log(chalk.red(`\n  更新失败: ${err.message}`));

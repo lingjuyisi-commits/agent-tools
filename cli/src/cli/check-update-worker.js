@@ -32,13 +32,12 @@ async function main() {
     const buffer = Buffer.from(await res.arrayBuffer());
     fs.writeFileSync(tgzPath, buffer);
 
-    // Install (windowsHide prevents cmd window flash on Windows)
-    const result = spawnSync(`npm install -g "${tgzPath}"`, {
-      stdio: 'ignore',
-      timeout: 120000,
-      shell: true,
-      windowsHide: true,
-    });
+    // Install — prefer local cache first, fall back to network
+    const spawnOpts = { stdio: 'ignore', timeout: 120000, shell: true, windowsHide: true };
+    let result = spawnSync(`npm install -g --prefer-offline "${tgzPath}"`, spawnOpts);
+    if (result.status !== 0) {
+      result = spawnSync(`npm install -g "${tgzPath}"`, spawnOpts);
+    }
     if (result.status !== 0) throw new Error(`npm install exited with code ${result.status}`);
 
     log({ status: 'success', version, from: require('../../package.json').version });
