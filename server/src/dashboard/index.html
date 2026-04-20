@@ -266,7 +266,6 @@
         <input id="admin-login" type="text" placeholder="SSO login" style="padding:6px 10px;border:1px solid #ccc;border-radius:4px;font-size:13px;">
         <label style="font-size:13px;">显示名:</label>
         <input id="admin-name" type="text" placeholder="可选（优先用 user_profiles）" style="padding:6px 10px;border:1px solid #ccc;border-radius:4px;font-size:13px;">
-        <input id="admin-role" type="hidden" value="admin">
         <button onclick="addUser()" style="padding:6px 16px;background:#4a90d9;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;">添加管理员</button>
       </div>
       <div class="ranking-table" id="admin-user-table"></div>
@@ -386,7 +385,9 @@ async function checkAuth() {
     const res = await fetch('/auth/session');
     if (!res.ok) {
       // /auth/session only exists when auth is enabled. 404 = auth off,
-      // treat as full-access (intranet deployment without SSO).
+      // treat as full-access (intranet deployment without SSO). The /my/*
+      // routes also don't exist in this mode — keep the tab hidden so we
+      // don't surface a button that 404s on click.
       authEnabled = false;
       authenticated = true;
       isAdmin = true;
@@ -448,10 +449,9 @@ async function addUser() {
   const login = document.getElementById('admin-login').value.trim();
   if (!login) return alert('请输入用户名');
   const name = document.getElementById('admin-name').value.trim();
-  const role = document.getElementById('admin-role').value;
   const res = await fetch(`${API}/admin/users`, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ login, name, role }),
+    body: JSON.stringify({ login, name }),
   });
   const data = await res.json();
   if (!res.ok) return alert(data.error || '添加失败');
@@ -598,7 +598,7 @@ async function loadMyTrend() {
         { name: '合计', type: 'line', data: data.map((d) => d.token_total),        itemStyle: { color: '#67c23a' } },
       ],
     }, true);
-  } catch {}
+  } catch (e) { console.error('loadMyTrend failed:', e); }
 }
 
 async function loadMyPies() {
@@ -623,7 +623,7 @@ async function loadMyPies() {
           label: { formatter: '{b}\n{d}%' },
         }],
       }, true);
-    } catch {}
+    } catch (e) { console.error(`loadMyPies(${d.key}) failed:`, e); }
   }
 }
 
@@ -643,7 +643,7 @@ async function loadMyRecentTable() {
     });
     html += '</tbody></table>';
     document.getElementById('my-recent-table').innerHTML = html;
-  } catch {}
+  } catch (e) { console.error('loadMyRecentTable failed:', e); }
 }
 
 // ===== KPI 卡片 =====
