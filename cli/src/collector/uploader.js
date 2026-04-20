@@ -6,6 +6,7 @@ const { LocalStore } = require('./local-store');
 const pkg = require('../../package.json');
 
 const UPDATE_LOG_FILE = path.join(os.homedir(), '.agent-tools', 'data', 'update-log.json');
+const UPDATE_LOG_CURSOR = path.join(os.homedir(), '.agent-tools', 'data', 'update-log-cursor.json');
 
 class Uploader {
   constructor() {
@@ -41,7 +42,9 @@ class Uploader {
         }
 
         // Fire-and-forget: upload update logs alongside event sync
-        this._reportUpdateLogs().catch(() => {});
+        this._reportUpdateLogs().catch(err => {
+          if (process.env.DEBUG_AGENT_TOOLS) console.error('[agent-tools] update log report failed:', err.message);
+        });
 
         return { synced: events.length, ...result };
       } else {
@@ -61,18 +64,32 @@ class Uploader {
     try { logs = JSON.parse(fs.readFileSync(UPDATE_LOG_FILE, 'utf-8')); } catch { return; }
     if (!Array.isArray(logs) || logs.length === 0) return;
 
+    // Only send entries newer than the last successfully reported time.
+    let lastReported = '';
+    try { lastReported = JSON.parse(fs.readFileSync(UPDATE_LOG_CURSOR, 'utf-8'))?.time || ''; } catch {}
+    const newLogs = lastReported ? logs.filter(e => e.time > lastReported) : logs;
+    if (newLogs.length === 0) return;
+
     const cfg = config.load();
-    await fetch(`${this.serverUrl}/api/v1/updates/report`, {
+    const res = await fetch(`${this.serverUrl}/api/v1/updates/report`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         username: cfg?.username || os.userInfo().username,
         hostname: os.hostname(),
         platform: os.platform(),
-        logs,
+        logs: newLogs,
       }),
       signal: AbortSignal.timeout(10000),
     });
+
+    if (res.ok) {
+      // Advance cursor to the latest entry we just reported.
+      const latest = newLogs.reduce((max, e) => (e.time > max ? e.time : max), '');
+      if (latest) {
+        fs.writeFileSync(UPDATE_LOG_CURSOR, JSON.stringify({ time: latest }), 'utf-8');
+      }
+    }
   }
 
   /**
