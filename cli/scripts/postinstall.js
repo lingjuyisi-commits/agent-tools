@@ -81,29 +81,36 @@ try {
 
   // --- Guard + cc-switch branching ---
   //
-  // Layered controls:
-  //   1. config.guard.enabled (server-side kill switch) — if false, always uninstall.
-  //   2. cc-switch detection — if user already runs cc-switch ≥ CC_SWITCH_MIN_VERSION
-  //      (hooks safe), silently skip guard and clean up any prior install.
-  //   3. Otherwise — install guard and nudge the user about cc-switch.
+  // Protection-aware decision table. cc-switch rewrites ~/.claude/settings.json
+  // on every provider switch, even in recent versions — hooks only survive if
+  // the user has pasted our universal-hook.js reference into cc-switch's Common
+  // Config Snippet (which gets overlaid on the snapshot). We detect that by
+  // scanning the raw bytes of cc-switch's local db for the filename.
+  //
+  // Guard is the safety net whenever we can't confirm protection.
   //
   // Only applies on Windows/macOS with Claude Code detected: guard's whole job
   // is to protect ~/.claude/settings.json.
-  const CC_SWITCH_MIN_VERSION = '3.12.0';
+  const CC_SWITCH_MIN_VERSION  = '3.12.0';
+  const CC_SWITCH_BROKEN_VERSION = '3.11.0';
 
   const hasClaudeCode = detected.some(
     (a) => a.name === claudeCode.name && (a.installed || a.configExists),
   );
   if ((os.platform() === 'win32' || os.platform() === 'darwin') && hasClaudeCode) {
     let guardEnabled = true;
-    let downloadUrl = '';
+    let downloadUrl  = '';
+    let serverUrl    = '';
     try {
       const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
       if (cfg?.guard?.enabled === false) guardEnabled = false;
       if (typeof cfg?.guard?.ccSwitchDownloadUrl === 'string') {
         downloadUrl = cfg.guard.ccSwitchDownloadUrl;
       }
+      if (typeof cfg?.server?.url === 'string') serverUrl = cfg.server.url.replace(/\/+$/, '');
     } catch {}
+
+    const troubleshootingUrl = serverUrl ? `${serverUrl}/dashboard/troubleshooting.html` : '';
 
     try {
       const guard = require('../src/guard');
@@ -115,22 +122,37 @@ try {
         const ccSwitch = require('../src/detector/cc-switch').detect();
         const { versionGte } = require('../src/utils/semver');
 
-        if (ccSwitch.installed && versionGte(ccSwitch.version, CC_SWITCH_MIN_VERSION)) {
-          // Scenario B: user already runs a safe cc-switch. Silent cleanup.
+        const isBroken = ccSwitch.installed && ccSwitch.version === CC_SWITCH_BROKEN_VERSION;
+        const isRecent = ccSwitch.installed && versionGte(ccSwitch.version, CC_SWITCH_MIN_VERSION);
+
+        if (ccSwitch.installed && ccSwitch.protected && !isBroken) {
+          // cc-switch is installed AND our hook is already in Common Config.
+          // Switching providers won't wipe settings.json hooks — guard is redundant.
           guard.uninstall();
-        } else if (ccSwitch.installed) {
-          // Scenario A: user has cc-switch but it's an old, hook-clobbering version.
+        } else if (ccSwitch.installed && isBroken) {
           guard.install();
-          console.log(`[agent-tools] 检测到 cc-switch v${ccSwitch.version}，请升级到 ≥ ${CC_SWITCH_MIN_VERSION}`);
-          console.log('              （修复了覆盖 settings.json 钩子的问题）。');
-          if (downloadUrl) console.log(`              下载: ${downloadUrl}`);
-          console.log('              guard 已临时启用守护。升级后执行 `agent-tools guard uninstall` 关闭。');
+          console.log(`[agent-tools] 检测到 cc-switch v${CC_SWITCH_BROKEN_VERSION}（此版本通用配置合并有 bug）。`);
+          console.log(`              请升级到 ≥ ${CC_SWITCH_MIN_VERSION}，guard 已临时启用守护。`);
+          if (downloadUrl)       console.log(`              下载: ${downloadUrl}`);
+          if (troubleshootingUrl) console.log(`              排查: ${troubleshootingUrl}`);
+        } else if (ccSwitch.installed && !ccSwitch.protected) {
+          guard.install();
+          if (isRecent) {
+            console.log(`[agent-tools] 检测到 cc-switch v${ccSwitch.version}，但通用配置里没有 agent-tools 钩子。`);
+            console.log('              切换供应商时 settings.json 仍会被重写，钩子会丢。');
+            console.log('              请把 agent-tools 钩子加到 cc-switch 的"通用配置"里（详见排查指南）。');
+          } else {
+            console.log(`[agent-tools] 检测到 cc-switch v${ccSwitch.version}，请升级到 ≥ ${CC_SWITCH_MIN_VERSION}。`);
+            if (downloadUrl) console.log(`              下载: ${downloadUrl}`);
+          }
+          console.log('              guard 已临时启用守护。');
+          if (troubleshootingUrl) console.log(`              排查指南: ${troubleshootingUrl}`);
         } else {
-          // Scenario C: cc-switch not detected. Nudge install + keep guard on.
           guard.install();
           console.log(`[agent-tools] 未检测到 cc-switch，请安装 ≥ ${CC_SWITCH_MIN_VERSION}。`);
-          if (downloadUrl) console.log(`              下载: ${downloadUrl}`);
+          if (downloadUrl)        console.log(`              下载: ${downloadUrl}`);
           console.log('              guard 已启用，保护 ~/.claude/settings.json 的钩子不被覆盖。');
+          if (troubleshootingUrl) console.log(`              排查指南: ${troubleshootingUrl}`);
         }
       }
     } catch (err) {
