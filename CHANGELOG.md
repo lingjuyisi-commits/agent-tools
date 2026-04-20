@@ -15,6 +15,26 @@
 
 ## [Unreleased]
 
+## [0.8.8] - 2026-04-20
+
+### Added
+- `user_profiles` 表（server/migrations/007）：作为 display_name / email / dept 的权威源，导入后 Dashboard 全局的用户名展示（stats 各表、管理员管理）统一从这张表覆盖，管理员和从未活跃用户也能显示正确的名字
+- cc-switch 检测器：probe `/Applications/CC Switch.app` 与 Windows `%LOCALAPPDATA%\Programs\cc-switch`，读取 package.json 版本，并扫描 `~/.cc-switch/cc-switch.db` 字节流判断 Common Config 是否已包含本工具钩子
+- 开放 SSO 登录 + `/api/v1/my/*` 个人统计端点：任意 SSO 登录用户可在 "我的统计" Tab 看到自己的数据，无需加入白名单；原 `/api/v1/stats/*` 端点改为 admin-only
+- Dashboard 新 "我的统计" Tab：KPI + Token 趋势 + 按 model / hostname / agent 分布 + 最近 7 天明细
+- 静态排查指南 `/dashboard/troubleshooting.html`：覆盖 4 类常见场景（"我的统计"为空、cc-switch 抹钩子、管理员看不全员、SSO login 与 OS username 不一致）
+- `cli/src/utils/semver.js`：共用的 `versionGte`，消除 claude-code / codebuddy 两份重复实现
+
+### Changed
+- postinstall guard 决策改为"保护状态"而非"版本号"驱动：只有 cc-switch 已把 agent-tools 钩子写进 Common Config Snippet（且版本非 3.11.0 bug 版本）时才跳过 guard；其余情形（老版本、新版本但未配通用配置、未检测到 cc-switch）仍装 guard 并附排查指南链接
+- auth 守卫拆为 `createAuthGuard`（任何 SSO session）+ `createAdminGuard`（`allowed_users.role=admin`）
+- `/auth/session` 返回新增 `isAdmin` 字段；Dashboard 按此决定 Tab 可见性，非 admin 只看 "我的统计"
+- 管理员管理 Tab：从"用户管理"改名；新增时不再暴露 viewer 选项，role 强制 admin
+
+### Fixed
+- `/api/v1/my/*` 严格拒绝空/缺失的 session.user.login（401 Invalid session），消除了 `applyFilters` 对空 user 跳过 WHERE 导致的 fleet 数据泄漏
+- dashboard：`loadMyTrend` / `loadMyPies` / `loadMyRecentTable` 以前 `catch {}` 静默吞异常，改为 `console.error` 方便排查
+
 ## [0.8.7] - 2026-04-17
 
 ### Added
