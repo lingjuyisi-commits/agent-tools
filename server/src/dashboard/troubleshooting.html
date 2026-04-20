@@ -91,9 +91,18 @@
 
 <p>之后：</p>
 <ul>
-  <li>任何时候切 key → 通用配置作为 overlay 叠到 <code>settings.json</code>，钩子一直在。</li>
-  <li>创建新供应商时，<strong>"写入通用配置"</strong> 复选框默认勾上 —— 保持勾选就好，钩子会跟着新 provider 一起生效。</li>
+  <li>任何时候切 key（主界面 "启用" 按钮或系统托盘右键快捷切换都一样）→ 通用配置作为 overlay 叠到 <code>settings.json</code>，钩子一直在。</li>
+  <li>创建新供应商时，<strong>"写入通用配置"</strong> 复选框默认勾上 —— <strong>切勿取消勾选</strong>。取消后新 provider 切过去不会叠 Common Config，钩子会丢。</li>
 </ul>
+
+<div class="note">
+  <strong>⚠️ 通用配置是快照，不是活链接</strong><br>
+  "从当前供应商提取"只拍一次快照。以后 agent-tools 升级、新增钩子事件时，<code>settings.json</code> 里会多出新的 hook，但通用配置还是老的快照 —— 下次切 provider 时，新 hook 会被覆盖掉。
+  <br><br>
+  <strong>应对</strong>：agent-tools 每次升级后，重复一遍上面的"从当前供应商提取 → 保存"。或者开着 guard 兜底（方案 B），guard 会在钩子被抹瞬间自动补回来。
+</div>
+
+<p>误操作救回：cc-switch 会自动把最近 10 份配置快照存到 <code>~/.cc-switch/backups/</code>，搞坏了通用配置可以从里面恢复。</p>
 
 <h3>方案 B：让 guard 守护进程兜底</h3>
 <p>没方便配通用配置？guard 会监听 <code>~/.claude/settings.json</code>，钩子一被抹就重新注入。</p>
