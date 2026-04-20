@@ -27,24 +27,27 @@ module.exports = async function authPlugin(fastify, opts) {
   const providerPlugin = require(`./providers/${provider}`);
   fastify.register(providerPlugin, { auth, serverPort });
 
-  // Session query endpoint
+  // Session query endpoint. approved/role kept for backward-compat; the
+  // canonical gate is now `isAdmin` — any authenticated SSO session can
+  // see its own /api/v1/my/* data without being in allowed_users.
   fastify.get('/auth/session', async (request) => {
     if (!request.session?.user) {
       request.log.debug('Session check: not authenticated');
       return { authenticated: false, user: null };
     }
 
-    // Real-time whitelist + role check
     const login = request.session.user.login;
     const allowed = await db('allowed_users').where('login', login).first();
-    request.log.debug({ login, approved: !!allowed, role: allowed?.role }, 'Session check: user found');
+    const isAdmin = !!(allowed && allowed.role === 'admin');
+    request.log.debug({ login, isAdmin }, 'Session check: user found');
 
     return {
       authenticated: true,
       user: {
         ...request.session.user,
-        approved: !!allowed,
-        role: allowed?.role || null,
+        isAdmin,
+        approved: true,
+        role: allowed?.role || 'user',
       },
     };
   });

@@ -1,32 +1,40 @@
 /**
- * Authentication + authorization guard factory.
+ * Auth guards.
  *
- * Returns a preHandler hook that checks:
- * 1. User is logged in (session.user exists) → 401 if not
- * 2. User is in the allowed_users whitelist → 403 if not
+ * createAuthGuard  — any authenticated SSO session. Populates request.isAdmin
+ *                    from allowed_users.role for downstream use.
+ * createAdminGuard — rejects unless allowed_users.role === 'admin'.
  *
- * Whitelist is checked in real-time from the database (not cached in session)
- * so that admin changes take effect immediately without requiring re-login.
+ * Admin membership is checked in real-time from the database (not cached in
+ * session) so that admin changes take effect immediately.
  */
+
+async function lookupIsAdmin(db, login) {
+  if (!login) return false;
+  const row = await db('allowed_users').where('login', login).first();
+  return !!(row && row.role === 'admin');
+}
+
 function createAuthGuard(db) {
   return async function authGuard(request, reply) {
     if (!request.session?.user) {
       return reply.status(401).send({ error: 'Unauthorized' });
     }
-
-    const login = request.session.user.login;
-    const allowed = await db('allowed_users').where('login', login).first();
-
-    if (!allowed) {
-      return reply.status(403).send({
-        error: 'Forbidden',
-        message: '账号未获授权，请联系管理员',
-      });
-    }
-
-    // Attach current role to request for downstream use
-    request.userRole = allowed.role;
+    request.isAdmin = await lookupIsAdmin(db, request.session.user.login);
   };
 }
 
-module.exports = { createAuthGuard };
+function createAdminGuard(db) {
+  return async function adminGuard(request, reply) {
+    if (!request.session?.user) {
+      return reply.status(401).send({ error: 'Unauthorized' });
+    }
+    const isAdmin = await lookupIsAdmin(db, request.session.user.login);
+    if (!isAdmin) {
+      return reply.status(403).send({ error: 'Admin access required' });
+    }
+    request.isAdmin = true;
+  };
+}
+
+module.exports = { createAuthGuard, createAdminGuard, lookupIsAdmin };

@@ -29,11 +29,13 @@ async function adminRoutes(fastify, opts) {
 
   // Add a user to whitelist
   fastify.post('/api/v1/admin/users', async (request, reply) => {
-    const { login, name, role } = request.body || {};
+    const { login, name } = request.body || {};
     if (!login) {
       return reply.status(400).send({ error: 'login is required' });
     }
-    const validRole = (role === 'admin') ? 'admin' : 'viewer';
+    // allowed_users is now the admin list — every row grants admin.
+    // The legacy 'viewer' role still validates but is no longer used by the UI.
+    const validRole = 'admin';
 
     try {
       await db('allowed_users').insert({

@@ -44,14 +44,25 @@ function buildApp(db, config) {
   app.register(require('./routes/client'), { config });
   app.register(require('./routes/external'), { db });
 
-  // Stats routes (protected when auth is enabled)
+  // Stats routes — admin-only when auth is enabled
   app.register(async function protectedStats(instance) {
     if (authEnabled) {
-      const { createAuthGuard } = require('./auth/guard');
-      instance.addHook('preHandler', createAuthGuard(db));
+      const { createAdminGuard } = require('./auth/guard');
+      instance.addHook('preHandler', createAdminGuard(db));
     }
     instance.register(require('./routes/stats'), { db });
   });
+
+  // Per-user stats — any authenticated SSO session, only when auth is enabled.
+  // When auth is off, there is no session.user.login to scope by, so /my/* is
+  // skipped entirely (same pattern as admin routes).
+  if (authEnabled) {
+    app.register(async function myStats(instance) {
+      const { createAuthGuard } = require('./auth/guard');
+      instance.addHook('preHandler', createAuthGuard(db));
+      instance.register(require('./routes/my'), { db });
+    });
+  }
 
   // Admin routes (only when auth is enabled)
   if (authEnabled) {

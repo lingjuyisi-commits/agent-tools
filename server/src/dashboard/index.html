@@ -115,11 +115,54 @@
   </div>
 
   <div class="tab-bar">
+    <button id="btn-my"       onclick="switchTab('my')" style="display:none;">我的统计</button>
     <button id="btn-overview" class="active" onclick="switchTab('overview')">概览</button>
-    <button id="btn-ranking" onclick="switchTab('ranking')">排名</button>
+    <button id="btn-ranking"  onclick="switchTab('ranking')">排名</button>
     <button id="btn-drilldown" onclick="switchTab('drilldown')">钻取</button>
-    <button id="btn-tools" onclick="switchTab('tools')">工具与技能</button>
-    <button id="btn-admin" onclick="switchTab('admin')" style="display:none;">用户管理</button>
+    <button id="btn-tools"    onclick="switchTab('tools')">工具与技能</button>
+    <button id="btn-admin"    onclick="switchTab('admin')" style="display:none;">管理员管理</button>
+  </div>
+
+  <!-- 我的统计 Tab -->
+  <div id="tab-my" class="tab-content">
+    <div id="my-empty" style="display:none;padding:48px 24px;text-align:center;">
+      <h2 style="color:#333;margin-bottom:16px;">暂无你的使用数据</h2>
+      <p style="color:#666;margin-bottom:24px;line-height:1.6;">
+        安装 agent-tools 客户端后，数据会在每次同步时自动上传<br>（默认每 5 分钟一次）。
+      </p>
+      <a id="my-download-btn" href="/api/v1/client/download"
+         style="display:inline-block;padding:10px 24px;background:#4a90d9;color:#fff;
+                border-radius:6px;text-decoration:none;font-size:14px;">
+        下载 agent-tools →
+      </a>
+    </div>
+    <div id="my-content" style="display:none;">
+      <div class="kpi-row" id="my-kpi-row"></div>
+      <div class="charts-grid">
+        <div class="chart-card">
+          <h3>Token 消耗趋势</h3>
+          <div id="my-chart-trend" class="chart-container"></div>
+        </div>
+      </div>
+      <div class="charts-grid">
+        <div class="chart-card">
+          <h3>按模型分布</h3>
+          <div id="my-chart-model" class="chart-container"></div>
+        </div>
+        <div class="chart-card">
+          <h3>按主机分布</h3>
+          <div id="my-chart-hostname" class="chart-container"></div>
+        </div>
+        <div class="chart-card">
+          <h3>按 Agent 分布</h3>
+          <div id="my-chart-agent" class="chart-container"></div>
+        </div>
+      </div>
+      <div class="ranking-section">
+        <h3>最近 7 天</h3>
+        <div class="ranking-table" id="my-recent-table"></div>
+      </div>
+    </div>
   </div>
 
   <!-- 概览 Tab -->
@@ -219,16 +262,12 @@
   <div id="tab-admin" class="tab-content">
     <div style="padding:24px;">
       <div id="admin-add-form" style="margin-bottom:20px;display:flex;gap:12px;align-items:center;">
-        <label style="font-size:13px;">用户名:</label>
-        <input id="admin-login" type="text" placeholder="OAuth 用户名" style="padding:6px 10px;border:1px solid #ccc;border-radius:4px;font-size:13px;">
+        <label style="font-size:13px;">OAuth 用户名:</label>
+        <input id="admin-login" type="text" placeholder="SSO login" style="padding:6px 10px;border:1px solid #ccc;border-radius:4px;font-size:13px;">
         <label style="font-size:13px;">显示名:</label>
-        <input id="admin-name" type="text" placeholder="可选" style="padding:6px 10px;border:1px solid #ccc;border-radius:4px;font-size:13px;">
-        <label style="font-size:13px;">角色:</label>
-        <select id="admin-role" style="padding:6px 10px;border:1px solid #ccc;border-radius:4px;font-size:13px;">
-          <option value="viewer">viewer</option>
-          <option value="admin">admin</option>
-        </select>
-        <button onclick="addUser()" style="padding:6px 16px;background:#4a90d9;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;">添加</button>
+        <input id="admin-name" type="text" placeholder="可选（优先用 user_profiles）" style="padding:6px 10px;border:1px solid #ccc;border-radius:4px;font-size:13px;">
+        <input id="admin-role" type="hidden" value="admin">
+        <button onclick="addUser()" style="padding:6px 16px;background:#4a90d9;color:#fff;border:none;border-radius:4px;cursor:pointer;font-size:13px;">添加管理员</button>
       </div>
       <div class="ranking-table" id="admin-user-table"></div>
     </div>
@@ -282,10 +321,21 @@ document.getElementById('period').addEventListener('change', function() {
 });
 
 checkServerStatus();
-checkAuth();
-loadUserNames();
-loadFilterOptions();
-refreshAll();
+(async () => {
+  await checkAuth();
+  // authEnabled=false → no SSO gating, show the admin-like full view.
+  // authEnabled=true + not logged in → login overlay, skip data.
+  // authEnabled=true + logged in + isAdmin → full view.
+  // authEnabled=true + logged in + !isAdmin → "我的统计" only.
+  if (!authEnabled || isAdmin) {
+    loadUserNames();
+    loadFilterOptions();
+    refreshAll();
+  } else if (authenticated) {
+    switchTab('my');
+    refreshMy();
+  }
+})();
 
 // ===== 参数构建 =====
 function getParams() {
@@ -326,23 +376,43 @@ function showAuthOverlay(title, msg, showLogin) {
   overlay.style.display = 'flex';
 }
 
+// Auth state — filled in by checkAuth() before any data loading.
+let authEnabled = true;
+let authenticated = false;
+let isAdmin = false;
+
 async function checkAuth() {
   try {
     const res = await fetch('/auth/session');
-    if (!res.ok) return; // auth not enabled (404) — keep all UI hidden, all public
+    if (!res.ok) {
+      // /auth/session only exists when auth is enabled. 404 = auth off,
+      // treat as full-access (intranet deployment without SSO).
+      authEnabled = false;
+      authenticated = true;
+      isAdmin = true;
+      return;
+    }
     const data = await res.json();
-    if (data.authenticated) {
-      document.getElementById('user-info').textContent = data.user.login;
-      document.getElementById('user-info').style.display = '';
-      document.getElementById('logout-btn').style.display = '';
-      if (data.user.role === 'admin') {
-        document.getElementById('btn-admin').style.display = '';
-      }
-      if (!data.user.approved) {
-        showAuthOverlay('访问受限', '您的账号未获授权，请联系管理员', false);
-      }
-    } else {
+    authenticated = !!data.authenticated;
+    isAdmin = !!(data.user && data.user.isAdmin);
+
+    if (!authenticated) {
       document.getElementById('login-btn').style.display = '';
+      return;
+    }
+
+    document.getElementById('user-info').textContent = data.user.login;
+    document.getElementById('user-info').style.display = '';
+    document.getElementById('logout-btn').style.display = '';
+    document.getElementById('btn-my').style.display = '';
+
+    if (isAdmin) {
+      document.getElementById('btn-admin').style.display = '';
+    } else {
+      // Non-admin: hide fleet-wide tabs.
+      ['btn-overview', 'btn-ranking', 'btn-drilldown', 'btn-tools'].forEach((id) => {
+        document.getElementById(id).style.display = 'none';
+      });
     }
   } catch {
     // network error — keep all UI hidden
@@ -443,14 +513,21 @@ function switchTab(name) {
 }
 
 function loadTabData(name) {
-  if (name === 'ranking') loadRanking();
+  if (name === 'my')        refreshMy();
+  if (name === 'ranking')   loadRanking();
   if (name === 'drilldown') { loadDrilldownUsers(); loadDrilldown(true); }
-  if (name === 'tools') loadToolStats();
-  if (name === 'admin') loadAdminUsers();
+  if (name === 'tools')     loadToolStats();
+  if (name === 'admin')     loadAdminUsers();
 }
 
 // ===== 刷新（不重建筛选项，只刷新数据） =====
 async function refreshAll() {
+  // Non-admin users can only see their own data — the /stats/* endpoints
+  // would 403. Skip the admin flow and refresh "我的统计" instead.
+  if (authEnabled && !isAdmin) {
+    refreshMy();
+    return;
+  }
   loadSummary();
   loadTrend();
   loadInstalledUsers();
@@ -460,6 +537,113 @@ async function refreshAll() {
   const searchInput = document.getElementById('ranking-search');
   if (searchInput) searchInput.value = '';
   loadTabData(activeTab);
+}
+
+// ===== 我的统计 =====
+async function refreshMy() {
+  let summary;
+  try {
+    summary = await apiFetch('/my/summary');
+  } catch (e) {
+    document.getElementById('my-kpi-row').innerHTML = `<div class="error">${e.message}</div>`;
+    return;
+  }
+
+  const hasData = summary && (summary.event_count || summary.token_total);
+  document.getElementById('my-empty').style.display    = hasData ? 'none' : '';
+  document.getElementById('my-content').style.display  = hasData ? ''     : 'none';
+  if (!hasData) return;
+
+  renderMyKpi(summary);
+  loadMyTrend();
+  loadMyPies();
+  loadMyRecentTable();
+}
+
+function renderMyKpi(data) {
+  const filesCreated  = data.files_created_total  || 0;
+  const filesModified = data.files_modified_total || 0;
+  const kpis = [
+    { label: 'Token 合计', value: fmtK(data.token_total),
+      sub: `输入 ${fmtK(data.token_input_total)} / 输出 ${fmtK(data.token_output_total)}` },
+    { label: '会话数',     value: fmt(data.session_count),
+      sub: `${fmt(data.turn_count || 0)} 轮对话 / ${fmt(data.event_count)} 事件` },
+    { label: '主机数',     value: fmt(data.host_count || 0), sub: '' },
+    { label: '文件变更',   value: fmt(filesCreated + filesModified),
+      sub: `新增 ${fmt(filesCreated)} / 修改 ${fmt(filesModified)}` },
+    { label: '新增行数',   value: fmt(data.lines_added_total || 0),
+      sub: `删除 ${fmt(data.lines_removed_total || 0)}` },
+  ];
+  document.getElementById('my-kpi-row').innerHTML = kpis.map((k) => `
+    <div class="kpi-card">
+      <div class="label">${k.label}</div>
+      <div class="value">${k.value}</div>
+      <div class="sub">${k.sub}</div>
+    </div>
+  `).join('');
+}
+
+async function loadMyTrend() {
+  try {
+    const data = await apiFetch('/my/trend');
+    const chart = echarts.init(document.getElementById('my-chart-trend'));
+    chart.setOption({
+      tooltip: { trigger: 'axis' },
+      legend: { data: ['输入', '输出', '合计'], bottom: 0 },
+      xAxis: { type: 'category', data: data.map((d) => d.date) },
+      yAxis: { type: 'value' },
+      series: [
+        { name: '输入', type: 'line', data: data.map((d) => d.token_input_total),  itemStyle: { color: '#4a90d9' } },
+        { name: '输出', type: 'line', data: data.map((d) => d.token_output_total), itemStyle: { color: '#e6a23c' } },
+        { name: '合计', type: 'line', data: data.map((d) => d.token_total),        itemStyle: { color: '#67c23a' } },
+      ],
+    }, true);
+  } catch {}
+}
+
+async function loadMyPies() {
+  const dims = [
+    { key: 'model',    id: 'my-chart-model' },
+    { key: 'hostname', id: 'my-chart-hostname' },
+    { key: 'agent',    id: 'my-chart-agent' },
+  ];
+  for (const d of dims) {
+    try {
+      const rows = await apiFetch('/my/drilldown', { drilldown: d.key });
+      const chart = echarts.init(document.getElementById(d.id));
+      if (!rows || rows.length === 0) {
+        chart.setOption({ title: { text: '暂无数据', left: 'center', top: 'center', textStyle: { color: '#ccc' } } }, true);
+        continue;
+      }
+      chart.setOption({
+        tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
+        series: [{
+          type: 'pie', radius: ['40%', '70%'],
+          data: rows.map((r) => ({ name: r[d.key] || '未知', value: r.token_total })),
+          label: { formatter: '{b}\n{d}%' },
+        }],
+      }, true);
+    } catch {}
+  }
+}
+
+async function loadMyRecentTable() {
+  try {
+    const data = await apiFetch('/my/trend');
+    const last7 = data.slice(-7).reverse();
+    let html = '<table><thead><tr><th>日期</th><th>事件数</th><th>Token 输入</th><th>Token 输出</th><th>Token 合计</th></tr></thead><tbody>';
+    last7.forEach((d) => {
+      html += `<tr>
+        <td>${d.date}</td>
+        <td>${fmt(d.event_count || 0)}</td>
+        <td>${fmtK(d.token_input_total)}</td>
+        <td>${fmtK(d.token_output_total)}</td>
+        <td>${fmtK(d.token_total)}</td>
+      </tr>`;
+    });
+    html += '</tbody></table>';
+    document.getElementById('my-recent-table').innerHTML = html;
+  } catch {}
 }
 
 // ===== KPI 卡片 =====
