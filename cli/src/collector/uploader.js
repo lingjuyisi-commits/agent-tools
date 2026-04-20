@@ -1,6 +1,11 @@
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const config = require('../utils/config');
 const { LocalStore } = require('./local-store');
 const pkg = require('../../package.json');
+
+const UPDATE_LOG_FILE = path.join(os.homedir(), '.agent-tools', 'data', 'update-log.json');
 
 class Uploader {
   constructor() {
@@ -35,6 +40,9 @@ class Uploader {
           this._triggerAutoUpdate(result.update);
         }
 
+        // Fire-and-forget: upload update logs alongside event sync
+        this._reportUpdateLogs().catch(() => {});
+
         return { synced: events.length, ...result };
       } else {
         const text = await response.text().catch(() => '');
@@ -45,6 +53,26 @@ class Uploader {
     } finally {
       store.close();
     }
+  }
+
+  async _reportUpdateLogs() {
+    if (!fs.existsSync(UPDATE_LOG_FILE)) return;
+    let logs = [];
+    try { logs = JSON.parse(fs.readFileSync(UPDATE_LOG_FILE, 'utf-8')); } catch { return; }
+    if (!Array.isArray(logs) || logs.length === 0) return;
+
+    const cfg = config.load();
+    await fetch(`${this.serverUrl}/api/v1/updates/report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: cfg?.username || os.userInfo().username,
+        hostname: os.hostname(),
+        platform: os.platform(),
+        logs,
+      }),
+      signal: AbortSignal.timeout(10000),
+    });
   }
 
   /**

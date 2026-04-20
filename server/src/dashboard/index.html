@@ -268,6 +268,22 @@
       <h3>版本活跃详情</h3>
       <div class="ranking-table" id="cli-version-table"></div>
     </div>
+    <!-- 更新统计 -->
+    <div class="kpi-row" id="update-kpi-row" style="padding-top:8px;"></div>
+    <div class="charts-grid">
+      <div class="chart-card">
+        <h3>更新成功 / 失败趋势</h3>
+        <div id="chart-update-trend" class="chart-container"></div>
+      </div>
+      <div class="chart-card">
+        <h3>失败原因分布</h3>
+        <div id="chart-update-failures" class="chart-container"></div>
+      </div>
+    </div>
+    <div class="ranking-section">
+      <h3>各版本更新结果</h3>
+      <div class="ranking-table" id="update-version-table"></div>
+    </div>
   </div>
 
   <!-- 用户管理 Tab (admin only) -->
@@ -1162,6 +1178,69 @@ async function loadToolStats() {
       }
     } catch {
       verChart.setOption({ title: { text: '版本数据加载失败', left: 'center', top: 'center', textStyle: { color: '#ccc' } } }, true);
+    }
+
+    // 更新统计
+    try {
+      const upd = await apiFetch('/stats/updates');
+      const s = upd?.summary || {};
+      document.getElementById('update-kpi-row').innerHTML = [
+        { label: '更新成功', value: fmt(s.success_count || 0), color: '#67c23a' },
+        { label: '更新失败', value: fmt(s.failed_count || 0), color: '#f56c6c' },
+        { label: '涉及用户', value: fmt(s.user_count || 0), color: '#409eff' },
+      ].map(k => `<div class="kpi-card"><div class="kpi-value" style="color:${k.color}">${k.value}</div><div class="kpi-label">${k.label}</div></div>`).join('');
+
+      // 各版本成功/失败柱状图
+      const trendChart = echarts.init(document.getElementById('chart-update-trend'));
+      const bv = upd?.byVersion || [];
+      if (bv.length > 0) {
+        trendChart.setOption({
+          tooltip: { trigger: 'axis' },
+          legend: { data: ['成功', '失败'] },
+          grid: { left: 60, right: 20, top: 40, bottom: 30 },
+          xAxis: { type: 'category', data: bv.map(d => d.to_version) },
+          yAxis: { type: 'value', minInterval: 1 },
+          series: [
+            { name: '成功', type: 'bar', stack: 'v', data: bv.map(d => d.success), itemStyle: { color: '#67c23a' } },
+            { name: '失败', type: 'bar', stack: 'v', data: bv.map(d => d.failed), itemStyle: { color: '#f56c6c' } },
+          ],
+        }, true);
+      } else {
+        trendChart.setOption({ title: { text: '暂无更新记录', left: 'center', top: 'center', textStyle: { color: '#ccc' } } }, true);
+      }
+
+      // 失败原因饼图
+      const failChart = echarts.init(document.getElementById('chart-update-failures'));
+      const fl = upd?.failures || [];
+      if (fl.length > 0) {
+        failChart.setOption({
+          tooltip: { trigger: 'item', formatter: '{b}<br/>{c} 次 ({d}%)' },
+          series: [{
+            type: 'pie', radius: ['35%', '65%'],
+            data: fl.map(d => ({ name: (d.error || '未知').slice(0, 60), value: d.cnt })),
+            label: { overflow: 'truncate', width: 120 },
+          }],
+        }, true);
+      } else {
+        failChart.setOption({ title: { text: '暂无失败记录', left: 'center', top: 'center', textStyle: { color: '#ccc' } } }, true);
+      }
+
+      // 各版本明细表
+      let updHtml = '';
+      if (bv.length > 0) {
+        updHtml = '<table><thead><tr><th>版本</th><th>成功</th><th>失败</th><th>成功率</th></tr></thead><tbody>';
+        bv.forEach(d => {
+          const total = d.success + d.failed;
+          const rate = total ? ((d.success / total) * 100).toFixed(1) + '%' : '-';
+          updHtml += `<tr><td>${esc(d.to_version)}</td><td style="color:#67c23a">${fmt(d.success)}</td><td style="color:#f56c6c">${fmt(d.failed)}</td><td>${rate}</td></tr>`;
+        });
+        updHtml += '</tbody></table>';
+      } else {
+        updHtml = '<div style="padding:16px;color:#999;text-align:center;">暂无更新记录</div>';
+      }
+      document.getElementById('update-version-table').innerHTML = updHtml;
+    } catch (e) {
+      console.error('更新统计加载失败:', e);
     }
   } catch (e) {
     console.error('工具统计加载失败:', e);
