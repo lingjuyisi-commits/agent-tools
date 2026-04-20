@@ -1191,7 +1191,8 @@ async function loadToolStats() {
       ].map(k => `<div class="kpi-card"><div class="kpi-value" style="color:${k.color}">${k.value}</div><div class="kpi-label">${k.label}</div></div>`).join('');
 
       // 各版本成功/失败柱状图
-      const trendChart = echarts.init(document.getElementById('chart-update-trend'));
+      const trendEl = document.getElementById('chart-update-trend');
+      const trendChart = echarts.getInstanceByDom(trendEl) || echarts.init(trendEl);
       const bv = upd?.byVersion || [];
       if (bv.length > 0) {
         trendChart.setOption({
@@ -1210,7 +1211,8 @@ async function loadToolStats() {
       }
 
       // 失败原因饼图
-      const failChart = echarts.init(document.getElementById('chart-update-failures'));
+      const failEl = document.getElementById('chart-update-failures');
+      const failChart = echarts.getInstanceByDom(failEl) || echarts.init(failEl);
       const fl = upd?.failures || [];
       if (fl.length > 0) {
         failChart.setOption({

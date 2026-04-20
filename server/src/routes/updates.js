@@ -1,5 +1,16 @@
 const crypto = require('crypto');
 
+// Compare semver strings numerically (e.g. "0.10.0" > "0.9.0").
+function semverCmp(a, b) {
+  const pa = (a || '').split('.').map(Number);
+  const pb = (b || '').split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    const d = (pb[i] || 0) - (pa[i] || 0);
+    if (d !== 0) return d;
+  }
+  return 0;
+}
+
 async function updatesRoutes(fastify, opts) {
   const { db } = opts;
 
@@ -12,12 +23,14 @@ async function updatesRoutes(fastify, opts) {
     }
 
     const now = new Date().toISOString();
-    let inserted = 0;
+    let attempted = 0;
     for (const entry of logs) {
       if (!entry.time || !entry.status) continue;
+      attempted++;
+      // Include status in hash so a retry (failed→success) on same version+time is stored separately.
       const eventId = crypto
         .createHash('sha1')
-        .update(`${username}|${hostname || ''}|${entry.version || ''}|${entry.time}`)
+        .update(`${username}|${hostname || ''}|${entry.version || ''}|${entry.time}|${entry.status}`)
         .digest('hex');
       try {
         await db('events').insert({
@@ -40,11 +53,10 @@ async function updatesRoutes(fastify, opts) {
             npm_bin: entry.npm || null,
           }),
         }).onConflict('event_id').ignore();
-        inserted++;
       } catch {}
     }
 
-    return { reported: inserted };
+    return { attempted };
   });
 
   // GET /api/v1/stats/updates
@@ -53,16 +65,16 @@ async function updatesRoutes(fastify, opts) {
 
     let query = db('events').where('event_type', 'update');
     if (period === 'day') {
-      query.where('event_time', '>=', new Date().toISOString().slice(0, 10));
+      query = query.where('event_time', '>=', new Date().toISOString().slice(0, 10));
     } else if (period === 'week') {
-      query.where('event_time', '>=', new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10));
+      query = query.where('event_time', '>=', new Date(Date.now() - 7 * 86400000).toISOString().slice(0, 10));
     } else if (period === 'month') {
-      query.where('event_time', '>=', new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
+      query = query.where('event_time', '>=', new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
     } else if (period === 'custom' && start && end) {
-      query.where('event_time', '>=', start).where('event_time', '<=', end + 'T23:59:59Z');
+      query = query.where('event_time', '>=', start).where('event_time', '<=', end + 'T23:59:59Z');
     }
 
-    const rows = await query.select('username', 'event_time', 'extra');
+    const rows = await query.select('username', 'event_time', 'extra').limit(50000);
     const parsed = rows.map(r => {
       let d = {};
       try { d = JSON.parse(r.extra || '{}'); } catch {}
@@ -73,7 +85,7 @@ async function updatesRoutes(fastify, opts) {
     const failed_count = parsed.filter(r => r.status === 'failed').length;
     const user_count = new Set(parsed.map(r => r.username)).size;
 
-    // by version
+    // by version — sorted by semver desc
     const vMap = {};
     for (const r of parsed) {
       const v = r.to_version || 'unknown';
@@ -81,7 +93,7 @@ async function updatesRoutes(fastify, opts) {
       if (r.status === 'success') vMap[v].success++;
       else vMap[v].failed++;
     }
-    const byVersion = Object.values(vMap).sort((a, b) => b.to_version.localeCompare(a.to_version));
+    const byVersion = Object.values(vMap).sort((a, b) => semverCmp(a.to_version, b.to_version));
 
     // failure reasons
     const errMap = {};
