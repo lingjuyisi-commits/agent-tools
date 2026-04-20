@@ -3,196 +3,67 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>agent-tools 排查指南</title>
+<title>agent-tools 使用指南</title>
 <style>
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-         max-width: 820px; margin: 0 auto; padding: 32px 24px; color: #333; line-height: 1.7; }
+         max-width: 760px; margin: 0 auto; padding: 32px 24px; color: #333; line-height: 1.7; }
   h1 { margin: 0 0 8px; color: #2c3e50; }
   h2 { margin: 36px 0 12px; color: #2c3e50; padding-top: 12px; border-top: 1px solid #eee; }
-  h3 { margin: 20px 0 8px; color: #4a5c6a; }
-  h4 { margin: 16px 0 6px; color: #4a5c6a; font-size: 1em; }
-  .lead { color: #666; margin-bottom: 24px; }
-  .toc { background: #f5f7fa; padding: 16px 20px; border-radius: 6px; margin: 16px 0 32px; }
-  .toc ol { margin: 0; padding-left: 20px; }
-  .toc a { color: #4a90d9; text-decoration: none; }
-  .toc a:hover { text-decoration: underline; }
+  .lead { color: #666; margin-bottom: 28px; }
   code { background: #f0f2f5; padding: 2px 6px; border-radius: 3px; font-size: 0.92em;
          font-family: 'SF Mono', Menlo, Consolas, monospace; color: #c7254e; }
   pre { background: #2c3e50; color: #e4e7eb; padding: 12px 16px; border-radius: 6px;
         overflow-x: auto; font-size: 13px; line-height: 1.5; }
   pre code { background: transparent; padding: 0; color: inherit; }
-  .note { background: #fff8e1; border-left: 4px solid #f0ad4e; padding: 12px 16px;
-          border-radius: 4px; margin: 16px 0; }
-  .back { display: inline-block; margin: 24px 0 0; color: #4a90d9; text-decoration: none; }
+  .tip { background: #f0f9eb; border-left: 4px solid #67c23a; padding: 12px 16px;
+         border-radius: 4px; margin: 16px 0; }
+  .back { display: inline-block; margin: 32px 0 0; color: #4a90d9; text-decoration: none; }
   .back:hover { text-decoration: underline; }
+  ol li, ul li { margin: 6px 0; }
 </style>
 </head>
 <body>
 
-<h1>agent-tools 排查指南</h1>
-<p class="lead">先判断是哪一类问题，再按对应章节走：装失败 vs 装上了但没上报。</p>
+<h1>agent-tools 使用指南</h1>
+<p class="lead">用于统计 Claude Code 等 AI 编程助手的使用数据，自动采集、定时上报。</p>
 
-<div class="toc">
-  <strong>目录</strong>
-  <ol>
-    <li><a href="#scene-install">客户端安装失败</a></li>
-    <li><a href="#scene-report">安装成功，但 Dashboard 没有我的数据</a>
-      <ul style="padding-left: 20px; margin: 4px 0;">
-        <li><a href="#scene-report-checklist">四步自检</a></li>
-        <li><a href="#scene-report-ccswitch">被 cc-switch 抹钩子的专项处理</a></li>
-      </ul>
-    </li>
-    <li><a href="#feedback">上述都搞不定？在 GitHub 提 issue</a></li>
-  </ol>
-</div>
+<h2>安装</h2>
 
-<h2 id="scene-install">1. 客户端安装失败</h2>
+<p>管理员会提供安装包下载地址，下载后执行：</p>
+<pre><code>npm install -g agent-tools-cli-x.x.x.tgz</code></pre>
 
-<p>判定标准：</p>
+<p>安装过程会自动完成：</p>
+<ul>
+  <li>写入 Claude Code hooks，开始采集使用数据</li>
+  <li>配置服务器地址</li>
+</ul>
+
+<p>安装完成后验证：</p>
 <pre><code>agent-tools --version</code></pre>
-<p>如果报 <code>command not found</code>、或者直接执行报错，都属于这一类。</p>
 
-<h3>1.1 <code>command not found</code></h3>
-<ul>
-  <li>确认 <strong>Node.js 和 npm 已安装</strong>：
-    <pre><code>node --version
-npm --version</code></pre>
-    没装就先装 Node ≥ 20。
-  </li>
-  <li>确认 <strong>npm 全局 bin 在 PATH 里</strong>：
-    <pre><code>npm config get prefix
-# 检查 $PATH / %PATH% 里有没有上面这个路径下的 bin / 子目录</code></pre>
-    Windows 常见位置是 <code>%APPDATA%\npm</code>；macOS/Linux 常见是 <code>/usr/local/bin</code> 或 <code>~/.npm-global/bin</code>。
-  </li>
-  <li>如果之前装过但被卸了，直接重装就行：
-    <pre><code>npm install -g &lt;your-agent-tools-tgz-url-or-registry&gt;</code></pre>
-  </li>
-</ul>
+<h2>正常使用</h2>
 
-<h3>1.2 npm install 报权限错误</h3>
-<ul>
-  <li><strong>macOS / Linux</strong> 报 <code>EACCES</code>：<strong>不要用 sudo 硬装</strong>。改成用户级 npm prefix：
-    <pre><code>mkdir ~/.npm-global
-npm config set prefix ~/.npm-global
-export PATH=~/.npm-global/bin:$PATH   # 加到 ~/.bashrc / ~/.zshrc
-npm install -g &lt;tgz&gt;</code></pre>
-  </li>
-  <li><strong>Windows</strong>：一般装到 <code>%APPDATA%\npm</code> 不需要管理员权限；如果被企业策略拦了，联系 IT 放行 <code>npm.cmd</code> 执行。</li>
-</ul>
+<p>安装完成后无需任何操作，在 Claude Code 里正常使用即可。数据会在后台自动采集并上报到 Dashboard。</p>
 
-<h3>1.3 postinstall 报错 / 中途失败</h3>
-<p>npm 安装成功但 postinstall 报错，会看到类似 <code>[agent-tools] guard 配置失败（已忽略）</code> 的行。常见原因：</p>
-<ul>
-  <li><strong>better-sqlite3 原生编译失败</strong>：prebuilt 下载失败或与当前系统不匹配。联系管理员拿对应平台的 <strong>离线安装包</strong>（内置了预编译的原生模块），用那个装。</li>
-  <li><strong>企业 EDR / 杀毒拦了 <code>schtasks</code>（Windows）或 <code>launchctl</code>（macOS）</strong>：CLI 本身能用，只是 guard 装不上。不是致命问题，手动跑一次检查：
-    <pre><code>agent-tools guard status</code></pre>
-    如果企业安全策略放不开，又想禁止自动装 guard，改配置：
-    <pre><code># ~/.agent-tools/config.json
-{ "guard": { "enabled": false }, ... }</code></pre>
-    然后下次自升级 postinstall 会跑 <code>guard.uninstall()</code> 清掉残留。
-  </li>
-  <li><strong>本地 <code>server.url</code> 为空</strong>：正常情况下 server 打包时会自动填进来。如果你的 <code>~/.agent-tools/config.json</code> 里 <code>server.url</code> 是空字符串，说明你装的这个 tarball 构建时没配好 server 地址。联系管理员重新打包 + 重新分发，不要手动改本地配置（下次自升级又会被覆盖）。</li>
-</ul>
-
-<h3>1.4 装完了之后呢</h3>
-<p><code>agent-tools --version</code> 正常输出版本号就算装好了。然后在 Claude Code 里随便执行一条命令，等几分钟，如果 Dashboard 还是没数据 → 进第 2 节。</p>
-
-<h2 id="scene-report">2. 安装成功，但 Dashboard 没有我的数据</h2>
-
-<h3 id="scene-report-checklist">四步自检</h3>
-
-<h4>Step 1：钩子是否在 <code>~/.claude/settings.json</code> 里</h4>
-<p>打开 <code>~/.claude/settings.json</code>，在 <code>hooks</code> 字段里搜 <code>universal-hook.js</code>。</p>
-<ul>
-  <li><strong>能找到</strong>：钩子健在，继续 Step 2。</li>
-  <li><strong>找不到 / 钩子字段整块没了</strong>：被外部工具（大概率 cc-switch）抹了。先手动注入一次，再看
-    <a href="#scene-report-ccswitch">第 2.2 节</a>根治。
-    <pre><code>agent-tools setup --force</code></pre>
-  </li>
-</ul>
-
-<h4>Step 2：本地是否有事件</h4>
-<pre><code>agent-tools stats</code></pre>
-<p>如果所有指标都是 <strong>0</strong>：Claude Code 没触发过钩子。去 Claude Code 里执行一条真实的工具调用（编辑文件、运行命令都行），回头再查。</p>
-<p>如果有数字：本地采集正常，问题在同步环节，继续 Step 3。</p>
-
-<h4>Step 3：手动同步一次</h4>
-<pre><code>agent-tools sync</code></pre>
-<ul>
-  <li>报 <strong>网络错误</strong>：检查 <code>~/.agent-tools/config.json</code> 里的 <code>server.url</code>，以及你机器能不能访问那个地址。</li>
-  <li>报 <strong>401 / 403</strong>：检查 server 端鉴权配置，或者是否需要先登录。</li>
-  <li>没报错但 Dashboard 还是空的：刷新 Dashboard，看右上角登录身份和你 CLI 机器的 OS 用户名是否一致。</li>
-</ul>
-
-<h4>Step 4：看 CLI 上报日志</h4>
-<pre><code>cat ~/.agent-tools/data/update-log.json
-cat ~/.agent-tools/data/guard-log.json   # 如果启用了 guard</code></pre>
-<p>失败的同步 / heal 行为会在这里留痕。</p>
-
-<h3 id="scene-report-ccswitch">2.2 被 cc-switch 抹钩子的专项处理</h3>
-
-<div class="note">
-  <strong>症状</strong>：刚装好时数据正常，用了 cc-switch 切 key 之后就突然不再上报。
-  <br><br>
-  <strong>原因</strong>：cc-switch 切供应商时会用存储里那个 provider 的 snapshot + 通用配置 overlay 覆盖
-  <code>~/.claude/settings.json</code>。我们的钩子如果不在 cc-switch 的"通用配置"里，overlay 时就没了。
+<div class="tip">
+  首次安装后，打开 Claude Code 执行一次任何操作（编辑文件、运行命令等），等 1–2 分钟后刷新 Dashboard 即可看到数据。
 </div>
 
-<h4>方案 A（推荐）：把钩子加到 cc-switch 通用配置</h4>
-<p>一次配置，长期有效。cc-switch 每次切 provider 会把通用配置作为 runtime overlay 叠到 live <code>settings.json</code> 上，钩子就不会丢。</p>
+<h2>遇到问题？重新安装</h2>
 
-<div class="note">
-  <strong>前置</strong>：先执行 <code>agent-tools setup --force</code>，确认钩子已回到 <code>~/.claude/settings.json</code>。下面的"从当前供应商提取"是从这份 live 文件读的，所以钩子必须先在。
-</div>
+<p>遇到任何问题（无数据上报、命令找不到、hooks 失效等），<strong>重新安装</strong>即可解决绝大多数问题：</p>
 
-<ol>
-  <li>升级 cc-switch 到 <strong>v3.12.0 或更高版本</strong>（v3.11.0 有已知 bug，跳过）。</li>
-  <li>打开 cc-switch，找到<strong>当前正在使用的供应商卡片</strong>，hover 露出操作按钮，点 <strong>"编辑"</strong>。</li>
-  <li>在编辑面板里切到 <strong>"通用配置面板"</strong>。</li>
-  <li>点 <strong>"从当前供应商提取"</strong>，cc-switch 会把 <code>settings.json</code> 里的共享字段拉进通用配置。</li>
-  <li>重点确认 <strong>hooks 字段里带了 <code>universal-hook.js</code> 的 command</strong>，并且覆盖了所有事件。其他被一起拉进来的字段（MCP / plugins / permissions 等）是预期行为，不用管。</li>
-  <li>点 <strong>"保存"</strong>。通用配置立即生效，不需要重启 cc-switch 或 CLI。</li>
-</ol>
+<pre><code>npm install -g agent-tools-cli-x.x.x.tgz</code></pre>
 
-<p>之后：</p>
+<p>重装会自动刷新 hooks 路径、重新配置 cc-switch 通用配置，无需任何手动操作。</p>
+
+<h2>仍然有问题？</h2>
+
+<p>到 <a href="https://github.com/lingjuyisi-commits/agent-tools/issues" target="_blank" rel="noopener">GitHub Issues</a> 反馈，请附上：</p>
 <ul>
-  <li>任何时候切 key（主界面 "启用" 按钮或系统托盘右键快捷切都一样）→ 通用配置 overlay，钩子一直在。</li>
-  <li>新建供应商时，<strong>"写入通用配置"</strong> 复选框默认勾上 —— <strong>切勿取消勾选</strong>。取消的话那个 provider 切过去时不叠 overlay，钩子又会丢。</li>
-</ul>
-
-<div class="note">
-  <strong>⚠️ 通用配置是快照，不是活链接</strong><br>
-  "从当前供应商提取"只拍一次快照。以后 agent-tools 升级、新增钩子事件时，<code>settings.json</code> 会多出新 hook，但通用配置还是老的快照 —— 下次切 provider 时，新 hook 会被 overlay 覆盖掉。
-  <br><br>
-  <strong>应对</strong>：agent-tools 每次升级后，重复一遍"从当前供应商提取 → 保存"。或者开着 guard 兜底（方案 B），guard 会在钩子被抹的瞬间自动补回来。
-</div>
-
-<p>误操作救回：cc-switch 会自动把最近 10 份配置快照存到 <code>~/.cc-switch/backups/</code>，搞坏了通用配置可以从里面恢复。</p>
-
-<h4>方案 B：让 guard 守护进程兜底</h4>
-<p>不方便配通用配置？guard 会监听 <code>~/.claude/settings.json</code>，钩子一被抹就自动重新注入。</p>
-<pre><code>agent-tools guard install
-agent-tools guard status</code></pre>
-<p>查看 guard 日志（有 <code>"event": "healed"</code> 的条目就说明在工作）：</p>
-<pre><code>cat ~/.agent-tools/data/guard-log.json</code></pre>
-
-<h2 id="feedback">上述都搞不定？在 GitHub 提 issue</h2>
-
-<p>可以直接到 <a href="https://github.com/lingjuyisi-commits/agent-tools/issues" target="_blank" rel="noopener">
-  github.com/lingjuyisi-commits/agent-tools/issues
-</a> 提 issue 反馈。</p>
-
-<p>为了帮你更快定位，issue 里请附上：</p>
-<ul>
-  <li><code>agent-tools --version</code> 的输出</li>
-  <li>操作系统 / 版本（macOS 14.x / Windows 11 / Ubuntu 22.04 之类）</li>
-  <li>相关日志片段：
-    <ul>
-      <li><code>~/.agent-tools/data/update-log.json</code>（自升级记录）</li>
-      <li><code>~/.agent-tools/data/guard-log.json</code>（如果启用了 guard）</li>
-    </ul>
-  </li>
-  <li>复现步骤（装完直接就不上报？还是用过一阵才没的？）</li>
+  <li><code>agent-tools --version</code> 输出</li>
+  <li>操作系统版本</li>
+  <li><code>~/.agent-tools/data/update-log.json</code> 内容</li>
 </ul>
 
 <a href="/dashboard/" class="back">← 返回 Dashboard</a>
