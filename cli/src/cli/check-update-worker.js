@@ -32,13 +32,20 @@ async function main() {
     const buffer = Buffer.from(await res.arrayBuffer());
     fs.writeFileSync(tgzPath, buffer);
 
-    // Resolve npm alongside the node binary running this worker.
-    // When Claude Code launches from a GUI (macOS Dock etc.) its PATH differs
-    // from the user's interactive shell, so `npm` on PATH may point to a
-    // different node environment than the one agent-tools was installed into.
-    // Using the sibling npm ensures install lands in the same global prefix.
-    const npmBin = path.join(path.dirname(process.execPath), 'npm');
-    const npmCmd = fs.existsSync(npmBin) ? `"${npmBin}"` : 'npm';
+    // Use the npm recorded at install time so the update lands in the same
+    // global prefix — making the new version take effect immediately without
+    // restarting the terminal. Falls back to the sibling npm of the current
+    // node binary, then plain 'npm' as last resort.
+    let npmCmd = 'npm';
+    try {
+      const cfg = require('../utils/config').load();
+      if (cfg?._npmBin && fs.existsSync(cfg._npmBin)) {
+        npmCmd = `"${cfg._npmBin}"`;
+      } else {
+        const siblingNpm = path.join(path.dirname(process.execPath), 'npm');
+        if (fs.existsSync(siblingNpm)) npmCmd = `"${siblingNpm}"`;
+      }
+    } catch {}
 
     // Install — prefer local cache first, fall back to network
     const spawnOpts = { stdio: 'ignore', timeout: 120000, shell: true, windowsHide: true };
