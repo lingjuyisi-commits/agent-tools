@@ -71,6 +71,7 @@
   <div class="header">
     <h1>Agent Tools Dashboard</h1>
     <div style="display:flex;align-items:center;gap:16px;">
+      <a href="/dashboard/troubleshooting.html" style="color:#8fc;font-size:13px;text-decoration:underline;">排查指南</a>
       <a id="client-download" href="/api/v1/client/download" style="display:none;color:#8fc;font-size:13px;text-decoration:underline;">下载客户端</a>
       <span id="user-info" style="display:none;color:#fff;font-size:13px;"></span>
       <a id="login-btn" href="/auth/login" style="display:none;color:#8fc;font-size:13px;text-decoration:underline;">登录</a>
@@ -163,6 +164,10 @@
         <div class="chart-card">
           <h3>按 Agent 分布</h3>
           <div id="my-chart-agent" class="chart-container"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Skill 使用分布</h3>
+          <div id="my-chart-skill" class="chart-container"></div>
         </div>
       </div>
       <div class="ranking-section">
@@ -580,6 +585,8 @@ function renderMyKpi(data) {
       sub: `新增 ${fmt(filesCreated)} / 修改 ${fmt(filesModified)}` },
     { label: '新增行数',   value: fmt(data.lines_added_total || 0),
       sub: `删除 ${fmt(data.lines_removed_total || 0)}` },
+    { label: 'Skill 调用', value: fmt(data.skill_count || 0),
+      sub: `${fmt(data.skill_unique || 0)} 种不同 Skill` },
   ];
   document.getElementById('my-kpi-row').innerHTML = kpis.map((k) => `
     <div class="kpi-card">
@@ -610,9 +617,10 @@ async function loadMyTrend() {
 
 async function loadMyPies() {
   const dims = [
-    { key: 'model',    id: 'my-chart-model' },
-    { key: 'hostname', id: 'my-chart-hostname' },
-    { key: 'agent',    id: 'my-chart-agent' },
+    { key: 'model',      id: 'my-chart-model' },
+    { key: 'hostname',   id: 'my-chart-hostname' },
+    { key: 'agent',      id: 'my-chart-agent' },
+    { key: 'skill_name', id: 'my-chart-skill' },
   ];
   for (const d of dims) {
     try {
@@ -626,7 +634,7 @@ async function loadMyPies() {
         tooltip: { trigger: 'item', formatter: '{b}: {c} ({d}%)' },
         series: [{
           type: 'pie', radius: ['40%', '70%'],
-          data: rows.map((r) => ({ name: r[d.key] || '未知', value: r.token_total })),
+          data: rows.map((r) => ({ name: r[d.key] || '未知', value: d.key === 'skill_name' ? r.event_count : r.token_total })),
           label: { formatter: '{b}\n{d}%' },
         }],
       }, true);

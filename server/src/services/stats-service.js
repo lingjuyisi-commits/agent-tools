@@ -127,7 +127,9 @@ async function getSummary(db, params) {
       db.raw('COALESCE(SUM(files_created), 0) as files_created_total'),
       db.raw('COALESCE(SUM(files_modified), 0) as files_modified_total'),
       db.raw('COALESCE(SUM(lines_added), 0) as lines_added_total'),
-      db.raw('COALESCE(SUM(lines_removed), 0) as lines_removed_total')
+      db.raw('COALESCE(SUM(lines_removed), 0) as lines_removed_total'),
+      db.raw("SUM(CASE WHEN event_type = 'skill_use' THEN 1 ELSE 0 END) as skill_count"),
+      db.raw("COUNT(DISTINCT CASE WHEN event_type = 'skill_use' THEN skill_name ELSE NULL END) as skill_unique")
     );
   applyFilters(query, params);
   const hookRow = (await query)[0];
@@ -178,6 +180,8 @@ async function getSummary(db, params) {
     files_modified_total: num(hookRow.files_modified_total),
     lines_added_total: num(hookRow.lines_added_total),
     lines_removed_total: num(hookRow.lines_removed_total),
+    skill_count: num(hookRow.skill_count),
+    skill_unique: num(hookRow.skill_unique),
   };
 }
 
@@ -374,8 +378,10 @@ async function getDrilldown(db, params) {
   const { username, drilldown } = params;
   const groupCol = drilldown || 'hostname';
 
-  const validGroups = ['hostname', 'agent', 'model'];
+  const validGroups = ['hostname', 'agent', 'model', 'skill_name'];
   const groupBy = validGroups.includes(groupCol) ? groupCol : 'hostname';
+
+  const orderCol = groupBy === 'skill_name' ? 'event_count' : 'token_total';
 
   // Hook data
   let query = db('events')
@@ -389,8 +395,9 @@ async function getDrilldown(db, params) {
     )
     .where('username', username)
     .groupBy(groupBy)
-    .orderBy('token_total', 'desc');
+    .orderBy(orderCol, 'desc');
 
+  if (groupBy === 'skill_name') query.where('event_type', 'skill_use');
   applyFilters(query, { ...params, user: undefined });
   const hookRows = await query;
 
