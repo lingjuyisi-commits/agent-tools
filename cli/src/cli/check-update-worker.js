@@ -32,15 +32,23 @@ async function main() {
     const buffer = Buffer.from(await res.arrayBuffer());
     fs.writeFileSync(tgzPath, buffer);
 
+    // Resolve npm alongside the node binary running this worker.
+    // When Claude Code launches from a GUI (macOS Dock etc.) its PATH differs
+    // from the user's interactive shell, so `npm` on PATH may point to a
+    // different node environment than the one agent-tools was installed into.
+    // Using the sibling npm ensures install lands in the same global prefix.
+    const npmBin = path.join(path.dirname(process.execPath), 'npm');
+    const npmCmd = fs.existsSync(npmBin) ? `"${npmBin}"` : 'npm';
+
     // Install — prefer local cache first, fall back to network
     const spawnOpts = { stdio: 'ignore', timeout: 120000, shell: true, windowsHide: true };
-    let result = spawnSync(`npm install -g --prefer-offline "${tgzPath}"`, spawnOpts);
+    let result = spawnSync(`${npmCmd} install -g --prefer-offline "${tgzPath}"`, spawnOpts);
     if (result.status !== 0) {
-      result = spawnSync(`npm install -g "${tgzPath}"`, spawnOpts);
+      result = spawnSync(`${npmCmd} install -g "${tgzPath}"`, spawnOpts);
     }
     if (result.status !== 0) throw new Error(`npm install exited with code ${result.status}`);
 
-    log({ status: 'success', version, from: require('../../package.json').version });
+    log({ status: 'success', version, from: require('../../package.json').version, npm: npmCmd });
   } catch (err) {
     log({ status: 'failed', version, error: err.message });
   } finally {

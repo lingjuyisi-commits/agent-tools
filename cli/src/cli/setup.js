@@ -1,6 +1,9 @@
+const fs = require('fs');
 const chalk = require('chalk');
 const config = require('../utils/config');
 const { detectAll, setupAll } = require('../detector');
+const ccSwitch = require('../detector/cc-switch');
+const claudeCode = require('../detector/claude-code');
 
 async function runSetup(options) {
   if (!config.exists()) {
@@ -39,6 +42,23 @@ async function runSetup(options) {
       console.log(chalk.green(`  ${r.name}: hooks configured -> ${r.configFile}`));
     } else {
       console.log(chalk.red(`  ${r.name}: failed — ${r.error || 'unknown error'}`));
+    }
+  }
+
+  // Inject hooks into cc-switch Common Config if installed
+  const ccSwitchInfo = ccSwitch.detect();
+  if (ccSwitchInfo.installed) {
+    console.log(chalk.bold('\nConfiguring cc-switch common config...\n'));
+    let hooks = {};
+    try {
+      const settings = JSON.parse(fs.readFileSync(claudeCode.SETTINGS_FILE, 'utf-8'));
+      hooks = settings.hooks || {};
+    } catch {}
+    const r = ccSwitch.injectCommonConfig(hooks);
+    if (r.success) {
+      console.log(chalk.green(`  cc-switch: common config + all providers updated -> ${r.dbPath}`));
+    } else {
+      console.log(chalk.yellow(`  cc-switch: skipped — ${r.error}`));
     }
   }
 

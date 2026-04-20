@@ -98,4 +98,59 @@ function detect() {
   return { installed: false, version: null, path: null, protected: false };
 }
 
-module.exports = { detect };
+/**
+ * Inject hooks into cc-switch's Common Config and enable commonConfigEnabled
+ * for all claude providers, so hooks survive provider switches.
+ *
+ * @param {object} hooks - The hooks object from ~/.claude/settings.json
+ * @returns {{ success: boolean, dbPath?: string, error?: string }}
+ */
+function injectCommonConfig(hooks) {
+  let dbPath = null;
+  for (const p of ccSwitchDbCandidates()) {
+    if (fs.existsSync(p)) { dbPath = p; break; }
+  }
+  if (!dbPath) return { success: false, error: 'cc-switch db not found' };
+
+  let Database;
+  try { Database = require('better-sqlite3'); } catch {
+    return { success: false, error: 'better-sqlite3 not available' };
+  }
+
+  let conn;
+  try {
+    conn = new Database(dbPath);
+
+    // 1. Merge hooks into common_config_claude
+    const row = conn.prepare("SELECT value FROM settings WHERE key='common_config_claude'").get();
+    let config = {};
+    try { if (row) config = JSON.parse(row.value); } catch {}
+    config.hooks = hooks;
+    conn.prepare(
+      "INSERT OR REPLACE INTO settings (key, value) VALUES ('common_config_claude', ?)"
+    ).run(JSON.stringify(config, null, 2));
+
+    // 2. Enable commonConfigEnabled for all claude providers
+    const providers = conn.prepare(
+      "SELECT id, app_type, meta FROM providers WHERE app_type='claude'"
+    ).all();
+    for (const p of providers) {
+      let meta = {};
+      try { meta = JSON.parse(p.meta); } catch {}
+      if (!meta.commonConfigEnabled) {
+        meta.commonConfigEnabled = true;
+        conn.prepare(
+          "UPDATE providers SET meta=? WHERE id=? AND app_type=?"
+        ).run(JSON.stringify(meta), p.id, p.app_type);
+      }
+    }
+
+    return { success: true, dbPath };
+  } catch (err) {
+    return { success: false, error: err.message };
+  } finally {
+    try { if (conn) conn.close(); } catch {}
+  }
+}
+
+module.exports = { detect, injectCommonConfig };
