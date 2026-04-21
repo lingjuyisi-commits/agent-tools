@@ -29,7 +29,9 @@ agent-tools/
     ├── 09-version-update-design.md
     ├── 10-auth-design.md
     ├── 11-integration-guide.md
-    └── 12-auto-update-design.md
+    ├── 12-auto-update-design.md
+    ├── 13-hook-protection-design.md
+    └── 14-troubleshooting.md    # 问题排查指南（数据不上报、版本不生效等）
 ```
 
 ## 快速开始
