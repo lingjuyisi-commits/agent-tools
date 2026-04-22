@@ -132,7 +132,7 @@
         安装 agent-tools 客户端后，数据会在每次同步时自动上传<br>（默认每 5 分钟一次）。
       </p>
       <div style="display:flex;gap:12px;justify-content:center;align-items:center;">
-        <a href="/api/v1/client/download"
+        <a id="client-download-full" href="/api/v1/client/download"
            style="display:inline-block;padding:10px 24px;background:#4a90d9;color:#fff;
                   border-radius:6px;text-decoration:none;font-size:14px;">
           下载 agent-tools →
@@ -502,11 +502,23 @@ async function checkServerStatus() {
     if (data.dashboard && data.dashboard.rankingPageSize) {
       rankingPageSize = data.dashboard.rankingPageSize;
     }
-    // Client download link — uses same version as server
+    // Client download link — href comes from server config (client.downloadUrl),
+    // falls back to /api/v1/client/download when not configured.
+    // Version label uses clientDownloadVersion (may be null when admin
+    // configures an external URL without pinning a version string).
     if (data.version) {
+      const rawUrl = data.clientDownloadUrl || '/api/v1/client/download';
+      // Protocol whitelist — protect against an admin accidentally writing
+      // javascript: or data: URIs into config.
+      const dlUrl = /^(https?:|\/)/i.test(rawUrl) ? rawUrl : '/api/v1/client/download';
+      const dlVer = data.clientDownloadVersion;
       const link = document.getElementById('client-download');
-      link.textContent = `下载客户端 v${data.version}`;
+      link.textContent = dlVer ? `下载客户端 v${dlVer}` : '下载客户端';
+      link.href = dlUrl;
       link.style.display = '';
+      // Also update the full-page download button in the "我的统计" empty-state panel
+      const bigBtn = document.getElementById('client-download-full');
+      if (bigBtn) bigBtn.href = dlUrl;
     }
   } catch {
     document.getElementById('server-status').textContent = '服务器不可达';

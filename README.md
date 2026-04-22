@@ -63,6 +63,24 @@ npm install -g agent-tools-cli-x.x.x.tgz
 
 > 也可以手动初始化：`agent-tools init --server http://your-server:3000`
 
+#### 指定下载包版本（可选）
+
+默认情况下，Dashboard「下载客户端」按钮指向服务器内置的 tgz（每次升级 server 都会变）。团队如果希望用户固定下载某个**全量离线包**（例如放在 CDN / 内网文件服务器上的 `agent-tools-cli-full-darwin-0.9.0.tgz`），可在 `~/.agent-tools-server/config.json` 添加：
+
+```json
+{
+  "client": {
+    "downloadUrl": "https://your-cdn.com/agent-tools-cli-full-darwin-0.9.0.tgz",
+    "downloadVersion": "0.9.0"
+  }
+}
+```
+
+- `downloadUrl` — Dashboard 按钮会直接跳转到这里；**只影响 Dashboard 展示，不影响老客户端的自动升级**（自动升级仍走 `/api/v1/client/download`，由 server 内置 tgz 驱动）
+- `downloadVersion` — 可选，用于 Dashboard 按钮上的版本标签（例如显示 "下载客户端 v0.9.0"）。未设置时按钮不显示版本号
+
+> ⚠️ **注意**：`/api/v1/health` 是公开接口，`downloadUrl` 的内容会暴露出去。**不要在此处放带访问 token 的私密 URL**。
+
 ### Step 3：打开 Dashboard
 
 在浏览器中访问：
