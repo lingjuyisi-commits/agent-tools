@@ -9,6 +9,30 @@ try {
   const os = require('os');
   const fs = require('fs');
   const path = require('path');
+  const { spawnSync } = require('child_process');
+
+  // --- Check better-sqlite3 ABI compatibility ---
+  // When installed from a local .tgz, the bundled prebuilt binary may have been
+  // compiled against a different Node.js ABI (e.g. the package was built on
+  // Node 24 but the user runs Node 22). Detect this early and auto-rebuild.
+  try {
+    require('better-sqlite3');
+  } catch (e) {
+    if (e.code === 'ERR_DLOPEN_FAILED' || /was compiled against a different/i.test(e.message)) {
+      console.log('\n[agent-tools] 检测到 better-sqlite3 与当前 Node.js 版本不兼容，正在重新编译...');
+      const pkgRoot = path.join(__dirname, '..');
+      const rebuildResult = spawnSync(
+        'npm', ['rebuild', 'better-sqlite3'],
+        { stdio: 'inherit', shell: true, cwd: pkgRoot, timeout: 120000 },
+      );
+      if (rebuildResult.status === 0) {
+        console.log('[agent-tools] better-sqlite3 重新编译成功。\n');
+      } else {
+        console.log('[agent-tools] 重新编译失败，请手动运行: npm rebuild better-sqlite3');
+        console.log('             （需要 Python、node-gyp 及 C++ 编译工具）\n');
+      }
+    }
+  }
 
   const HOME = path.join(os.homedir(), '.agent-tools');
   const CONFIG_FILE = path.join(HOME, 'config.json');
