@@ -136,10 +136,8 @@ try {
   }
 
   if (!autoConfigured && !fs.existsSync(CONFIG_FILE)) {
-    console.log('\n  开始使用:');
-    console.log('    agent-tools init');
-    console.log('\n  本地开发:');
-    console.log('    agent-tools init --server http://localhost:3000\n');
+    console.log('\n  [agent-tools] 未找到服务器配置（default-config.json）。');
+    console.log('               请从团队 Dashboard 的「下载客户端」下载完整安装包后重新安装。\n');
   }
 
   // --- Guard + cc-switch branching ---

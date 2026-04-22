@@ -61,8 +61,6 @@ npm install -g agent-tools-cli-x.x.x.tgz
 
 安装完成后**自动配置服务器地址并注入 hooks**，无需手动操作，即刻开始采集。
 
-> 也可以手动初始化：`agent-tools init --server http://your-server:3000`
-
 #### 指定下载包版本（可选）
 
 默认情况下，Dashboard「下载客户端」按钮指向服务器内置的 tgz（每次升级 server 都会变）。团队如果希望用户固定下载某个**全量离线包**（例如放在 CDN / 内网文件服务器上的 `agent-tools-cli-full-darwin-0.9.0.tgz`），可在 `~/.agent-tools-server/config.json` 添加：

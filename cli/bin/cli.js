@@ -27,15 +27,6 @@ program
   });
 
 program
-  .command('init')
-  .description('First-time setup — configure server URL and create local data directory')
-  .option('--server <url>', 'Server URL (skip interactive prompt)')
-  .action(async (options) => {
-    const { runInit } = require('../src/cli/init');
-    await runInit(options);
-  });
-
-program
   .command('setup')
   .description('Detect and configure AI coding agents')
   .option('--force', 'Overwrite existing hook configurations', false)
@@ -73,7 +64,8 @@ program
 
     const cfg = config.load();
     if (!cfg) {
-      console.log(chalk.yellow('Not initialized. Run: agent-tools init'));
+      console.log(chalk.yellow('未初始化：配置文件 ~/.agent-tools/config.json 不存在。'));
+      console.log(chalk.yellow('请从团队 Dashboard 重新下载客户端安装包并重新安装。'));
       return;
     }
 

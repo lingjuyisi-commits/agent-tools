@@ -12,35 +12,16 @@ npm install -g agent-tools
 
 ### 初始化
 
-```bash
-agent-tools init                                    # 首次初始化（交互式引导）
-agent-tools init --server http://localhost:3000     # 非交互模式（直接指定服务器地址）
-agent-tools setup                                   # 检测并配置已安装的 Agent
-```
+推荐通过团队 Dashboard 的「下载客户端」获取预配置好的 tgz 安装包，安装完成后
+postinstall 会自动读取包内的 `default-config.json`，写入 `~/.agent-tools/config.json`
+并注入 hooks，**无需执行任何额外命令**。
 
-`init` 会完成以下步骤：
-1. 提示输入（或自动使用 `--server` 参数指定的）服务器地址
-2. 测试与服务器的连接（`GET /api/v1/health`）
-3. 将配置写入 `~/.agent-tools/config.json`
-4. 自动调用 `setup` 检测本机已安装的 Agent 并注入 hooks
+如果 postinstall 未能自动配置（例如手动从公开 npm registry 安装），请从团队 Dashboard
+重新下载客户端安装包并重新安装。
 
 ---
 
 ## Commands
-
-### `init`
-
-首次初始化，设置服务器地址，自动触发 `setup`。
-
-```bash
-agent-tools init [--server <url>]
-```
-
-| 参数 | 说明 | 默认值 |
-|------|------|--------|
-| `--server <url>` | 统计服务器地址 | 交互式提示输入 |
-
----
 
 ### `setup`
 
@@ -312,7 +293,7 @@ interface StandardEvent {
 - **不采集**：prompt 内容、代码内容、文件内容、工具调用的参数值
 - **采集**：工具名称、Token 数量（不含文本）、文件数量、代码行数变化量、会话时长、模型名称、机器名、系统用户名
 
-所有数据上报到你自己控制的服务器（由 `agent-tools init --server` 指定），不会发送到任何第三方。
+所有数据上报到你自己控制的服务器（由安装包内的 `default-config.json` 指定），不会发送到任何第三方。
 
 ---
 

@@ -7,7 +7,7 @@ const claudeCode = require('../detector/claude-code');
 
 async function runSetup(options) {
   if (!config.exists()) {
-    console.log(chalk.yellow('Not initialized. Run: agent-tools init'));
+    console.log(chalk.yellow('未初始化。请从团队 Dashboard 重新下载客户端并重新安装。'));
     process.exitCode = 1;
     return;
   }

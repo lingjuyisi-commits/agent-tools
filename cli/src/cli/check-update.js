@@ -9,7 +9,7 @@ const os = require('os');
 async function runCheckUpdate(options) {
   // 1. Load config to get server URL
   if (!config.exists()) {
-    console.log(chalk.yellow('未初始化。请先运行: agent-tools init'));
+    console.log(chalk.yellow('未初始化。请从团队 Dashboard 重新下载客户端并重新安装。'));
     process.exitCode = 1;
     return;
   }
