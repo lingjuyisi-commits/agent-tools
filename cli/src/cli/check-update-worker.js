@@ -86,7 +86,14 @@ async function main() {
     }
     if (result.status !== 0) throw new Error(`npm install exited with code ${result.status}`);
 
-    log({ status: 'success', version, from: require('../../package.json').version, npm: npmCmd });
+    // Record where npm installed to — helps diagnose wrong-prefix issues.
+    let prefix = '';
+    try {
+      const r = spawnSync(`${npmCmd} prefix -g`, { shell: true, encoding: 'utf8', timeout: 10000 });
+      prefix = (r.stdout || '').trim();
+    } catch {}
+
+    log({ status: 'success', version, from: require('../../package.json').version, npm: npmCmd, prefix });
   } catch (err) {
     log({ status: 'failed', version, error: err.message });
   } finally {
