@@ -18,32 +18,56 @@ try {
   try {
     require('better-sqlite3');
   } catch (e) {
-    if (e.code === 'ERR_DLOPEN_FAILED' || /was compiled against a different/i.test(e.message)) {
+    // Only handle the specific ABI mismatch case. Rely on err.code rather than
+    // error message text — Node.js wording is not a stable API.
+    if (e.code === 'ERR_DLOPEN_FAILED') {
       console.log('\n[agent-tools] 检测到 better-sqlite3 与当前 Node.js 版本不兼容，正在重新编译...');
+      console.log('              （首次编译可能需要 1-2 分钟，请耐心等待）');
       const pkgRoot = path.join(__dirname, '..');
 
-      // Remove stale native binaries so npm rebuild / prebuild-install fetches
-      // or recompiles a fresh one matching the current Node.js ABI. Without
-      // this, a partially-failed rebuild could leave the old binary in place.
+      // Rename stale native binaries to .bak instead of deleting, so a failed
+      // rebuild (no network, no compiler toolchain) can roll back to the
+      // original — better a non-working binary than a totally missing one.
       const staleBinaryPaths = [
         path.join(pkgRoot, 'node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node'),
         path.join(pkgRoot, 'node_modules', 'better-sqlite3', 'build', 'Debug', 'better_sqlite3.node'),
         path.join(pkgRoot, 'node_modules', 'better-sqlite3', 'prebuilds'),
       ];
+      const backups = [];
       for (const p of staleBinaryPaths) {
         try {
-          if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true });
+          if (fs.existsSync(p)) {
+            const bak = `${p}.bak-${Date.now()}`;
+            fs.renameSync(p, bak);
+            backups.push({ original: p, backup: bak });
+          }
         } catch {}
       }
 
+      // --ignore-scripts prevents re-running postinstall recursively and avoids
+      // Windows npm lock contention from nested lifecycle hooks.
       const rebuildResult = spawnSync(
-        'npm', ['rebuild', 'better-sqlite3'],
-        { stdio: 'inherit', shell: true, cwd: pkgRoot, timeout: 120000 },
+        'npm', ['rebuild', '--ignore-scripts', 'better-sqlite3'],
+        { stdio: 'inherit', shell: true, cwd: pkgRoot, timeout: 180000 },
       );
       if (rebuildResult.status === 0) {
+        // Rebuild succeeded — clean up backups.
+        for (const { backup } of backups) {
+          try { fs.rmSync(backup, { recursive: true, force: true }); } catch {}
+        }
         console.log('[agent-tools] better-sqlite3 重新编译成功。\n');
       } else {
-        console.log('[agent-tools] 重新编译失败，请手动运行: npm rebuild better-sqlite3');
+        // Rebuild failed — roll back to original binaries (ABI-wrong but at
+        // least the file layout is intact for a later manual fix).
+        for (const { original, backup } of backups) {
+          try {
+            if (fs.existsSync(backup) && !fs.existsSync(original)) {
+              fs.renameSync(backup, original);
+            }
+          } catch {}
+        }
+        console.log('[agent-tools] 重新编译失败，已回滚到原始二进制。');
+        console.log('             请手动运行: npm rebuild better-sqlite3');
         console.log('             （需要 Python、node-gyp 及 C++ 编译工具）\n');
       }
     }
