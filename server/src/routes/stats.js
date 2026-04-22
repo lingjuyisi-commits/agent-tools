@@ -55,6 +55,10 @@ async function statsRoutes(fastify, opts) {
     let query = db('events')
       .select('event_type')
       .count('* as count')
+      // Exclude lifecycle events (download / update / install) — those have
+      // dedicated views in the Update stats section. Mixing them into the
+      // event-type pie would drown out real hook activity.
+      .whereNotIn('event_type', ['download', 'update'])
       .groupBy('event_type')
       .orderBy('count', 'desc');
 
@@ -130,13 +134,16 @@ async function statsRoutes(fastify, opts) {
     return query;
   });
 
-  // CLI version distribution: active users and event count per version
+  // CLI version distribution: active users and event count per version.
+  // Excludes synthetic events (download/update) — those record distribution
+  // / lifecycle, not actual CLI activity.
   fastify.get('/api/v1/stats/cli-versions', async (request, reply) => {
     let query = db('events')
       .select('agent_version as version')
       .countDistinct('username as active_users')
       .count('* as event_count')
       .whereNotNull('agent_version')
+      .whereNotIn('event_type', ['download', 'update'])
       .groupBy('agent_version')
       .orderBy('event_count', 'desc');
 
@@ -160,6 +167,8 @@ async function statsRoutes(fastify, opts) {
         db.raw('MIN(event_time) as first_seen'),
       )
       .whereNotNull('username')
+      .where('username', '!=', '')
+      .whereNotIn('event_type', ['download'])
       .groupBy('username')
       .orderBy('last_active', 'desc');
 

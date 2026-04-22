@@ -3,6 +3,7 @@
 // Post-install script:
 // 1. Apply default-config.json (server URL pre-configured by server download API)
 // 2. Detect agents and auto-inject hooks
+// 3. Report install outcome back to server (fire-and-forget)
 // Must never fail the installation — wrap everything in try/catch.
 
 try {
@@ -10,6 +11,13 @@ try {
   const fs = require('fs');
   const path = require('path');
   const { spawnSync } = require('child_process');
+
+  // Track outcome of each post-install stage so we can report back to the
+  // server at the end. Values: 'ok' | 'failed' | 'skipped' | 'disabled' | 'none'.
+  const stages = { rebuild: 'skipped', hooks: 'none', guard: 'skipped' };
+  const stageErrors = {};
+  let pkgVersion = null;
+  try { pkgVersion = require('../package.json').version; } catch {}
 
   // --- Check better-sqlite3 ABI compatibility ---
   // When installed from a local .tgz, the bundled prebuilt binary may have been
@@ -55,6 +63,7 @@ try {
         for (const { backup } of backups) {
           try { fs.rmSync(backup, { recursive: true, force: true }); } catch {}
         }
+        stages.rebuild = 'ok';
         console.log('[agent-tools] better-sqlite3 重新编译成功。\n');
       } else {
         // Rebuild failed — roll back to original binaries (ABI-wrong but at
@@ -66,6 +75,8 @@ try {
             }
           } catch {}
         }
+        stages.rebuild = 'failed';
+        stageErrors.rebuild = `npm rebuild exited with code ${rebuildResult.status}`;
         console.log('[agent-tools] 重新编译失败，已回滚到原始二进制。');
         console.log('             请手动运行: npm rebuild better-sqlite3');
         console.log('             （需要 Python、node-gyp 及 C++ 编译工具）\n');
@@ -126,8 +137,11 @@ try {
       console.log('\n  自动注入 hooks...');
       try {
         setupAll({ force: true });
+        stages.hooks = 'ok';
         console.log('  hooks 注入完成。\n');
-      } catch {
+      } catch (err) {
+        stages.hooks = 'failed';
+        stageErrors.hooks = (err && err.message) || 'setupAll threw';
         console.log('  hooks 注入失败，请手动运行: agent-tools setup\n');
       }
     }
@@ -180,6 +194,7 @@ try {
 
       if (!guardEnabled) {
         guard.uninstall();
+        stages.guard = 'disabled';
         console.log('[agent-tools] guard 已按配置禁用。');
       } else {
         const ccSwitch = require('../src/detector/cc-switch').detect();
@@ -192,14 +207,17 @@ try {
           // cc-switch is installed AND our hook is already in Common Config.
           // Switching providers won't wipe settings.json hooks — guard is redundant.
           guard.uninstall();
+          stages.guard = 'ok';
         } else if (ccSwitch.installed && isBroken) {
           guard.install();
+          stages.guard = 'ok';
           console.log(`[agent-tools] 检测到 cc-switch v${CC_SWITCH_BROKEN_VERSION}（此版本通用配置合并有 bug）。`);
           console.log(`              请升级到 ≥ ${CC_SWITCH_MIN_VERSION}，guard 已临时启用守护。`);
           if (downloadUrl)       console.log(`              下载: ${downloadUrl}`);
           if (troubleshootingUrl) console.log(`              排查: ${troubleshootingUrl}`);
         } else if (ccSwitch.installed && !ccSwitch.protected) {
           guard.install();
+          stages.guard = 'ok';
           if (isRecent) {
             console.log(`[agent-tools] 检测到 cc-switch v${ccSwitch.version}，但通用配置里没有 agent-tools 钩子。`);
             console.log('              切换供应商时 settings.json 仍会被重写，钩子会丢。');
@@ -212,6 +230,7 @@ try {
           if (troubleshootingUrl) console.log(`              排查指南: ${troubleshootingUrl}`);
         } else {
           guard.install();
+          stages.guard = 'ok';
           console.log(`[agent-tools] 未检测到 cc-switch，请安装 ≥ ${CC_SWITCH_MIN_VERSION}。`);
           if (downloadUrl)        console.log(`              下载: ${downloadUrl}`);
           console.log('              guard 已启用，保护 ~/.claude/settings.json 的钩子不被覆盖。');
@@ -219,9 +238,66 @@ try {
         }
       }
     } catch (err) {
+      stages.guard = 'failed';
+      stageErrors.guard = (err && err.message) || 'guard setup threw';
       console.log(`[agent-tools] guard 配置失败（已忽略）: ${err && err.message}`);
     }
   }
+
+  // --- Report install outcome ---
+  // Writes a single entry to update-log.json (so the normal sync path
+  // piggy-backs it) AND fires a best-effort direct POST so we learn about
+  // installs that are too broken to ever run the CLI.
+  try {
+    const failedStages = Object.keys(stageErrors);
+    const status = failedStages.length === 0 ? 'install-success' : 'install-failed';
+    const firstError = failedStages.length ? stageErrors[failedStages[0]] : null;
+    const entry = {
+      status,
+      version: pkgVersion,
+      stages,
+      error: firstError,
+      node: process.version,
+      platform: os.platform(),
+      arch: os.arch(),
+    };
+
+    // Persist to update-log.json — uploader.js will resend if the direct
+    // POST below fails or if the server is temporarily unreachable.
+    try {
+      const { appendLog } = require('../src/utils/json-logger');
+      const LOG_FILE = path.join(HOME, 'data', 'update-log.json');
+      appendLog(LOG_FILE, entry, 20);
+    } catch {}
+
+    // Best-effort direct POST. Only if we have a server URL to talk to and
+    // fetch() exists (Node ≥ 18). Runs detached so postinstall exits fast.
+    let serverUrlForReport = '';
+    try {
+      const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+      serverUrlForReport = (cfg?.server?.url || '').replace(/\/+$/, '');
+    } catch {}
+
+    if (serverUrlForReport && typeof fetch === 'function') {
+      // Add a timestamp the server expects (appendLog adds it in-file; the
+      // direct POST must set it explicitly).
+      const logEntry = { ...entry, time: new Date().toISOString() };
+      const payload = JSON.stringify({
+        username: os.userInfo().username,
+        hostname: os.hostname(),
+        platform: os.platform(),
+        logs: [logEntry],
+      });
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      fetch(`${serverUrlForReport}/api/v1/updates/report`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+        signal: controller.signal,
+      }).catch(() => {}).finally(() => clearTimeout(timer));
+    }
+  } catch {}
 } catch {
   // Post-install should never fail the installation
 }

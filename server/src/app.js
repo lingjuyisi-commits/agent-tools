@@ -42,7 +42,7 @@ function buildApp(db, config) {
   app.register(require('./routes/health'), { config });
   app.register(require('./routes/events'), { db });
   app.register(require('./routes/updates'), { db });
-  app.register(require('./routes/client'), { config });
+  app.register(require('./routes/client'), { config, db });
   app.register(require('./routes/external'), { db });
 
   // Stats routes — admin-only when auth is enabled

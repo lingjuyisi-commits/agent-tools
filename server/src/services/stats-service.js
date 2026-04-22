@@ -449,6 +449,8 @@ async function getTrend(db, params) {
       db.raw('COUNT(DISTINCT session_id) as session_count'),
       db.raw('COALESCE(SUM(token_input), 0) as token_input_total'),
       db.raw('COALESCE(SUM(token_output), 0) as token_output_total'),
+      db.raw('COALESCE(SUM(token_cache_read), 0) as token_cache_read_total'),
+      db.raw('COALESCE(SUM(token_cache_write), 0) as token_cache_write_total'),
       db.raw('COALESCE(SUM(token_input + token_output + COALESCE(token_cache_read, 0) + COALESCE(token_cache_write, 0)), 0) as token_total')
     )
     .groupBy(db.raw("SUBSTR(event_time, 1, 10)"))

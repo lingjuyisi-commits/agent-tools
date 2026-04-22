@@ -285,6 +285,14 @@
       <h3>各版本更新结果</h3>
       <div class="ranking-table" id="update-version-table"></div>
     </div>
+    <div class="ranking-section">
+      <h3>各版本下载量</h3>
+      <div class="ranking-table" id="download-version-table"></div>
+    </div>
+    <div class="ranking-section">
+      <h3>各版本首次安装结果</h3>
+      <div class="ranking-table" id="install-version-table"></div>
+    </div>
   </div>
 
   <!-- 用户管理 Tab (admin only) -->
@@ -634,17 +642,30 @@ function renderMyKpi(data) {
 async function loadMyTrend() {
   try {
     const data = await apiFetch('/my/trend');
+    const hasCacheRead  = data.some((d) => (d.token_cache_read_total  || 0) > 0);
+    const hasCacheWrite = data.some((d) => (d.token_cache_write_total || 0) > 0);
+    const legend = ['输入', '输出'];
+    const series = [
+      { name: '输入', type: 'line', data: data.map((d) => d.token_input_total),  itemStyle: { color: '#4a90d9' } },
+      { name: '输出', type: 'line', data: data.map((d) => d.token_output_total), itemStyle: { color: '#e6a23c' } },
+    ];
+    if (hasCacheRead) {
+      legend.push('Cache读');
+      series.push({ name: 'Cache读', type: 'line', data: data.map((d) => d.token_cache_read_total), itemStyle: { color: '#909399' } });
+    }
+    if (hasCacheWrite) {
+      legend.push('Cache写');
+      series.push({ name: 'Cache写', type: 'line', data: data.map((d) => d.token_cache_write_total), itemStyle: { color: '#c678dd' } });
+    }
+    legend.push('合计');
+    series.push({ name: '合计', type: 'line', data: data.map((d) => d.token_total), itemStyle: { color: '#67c23a' } });
     const chart = echarts.init(document.getElementById('my-chart-trend'));
     chart.setOption({
       tooltip: { trigger: 'axis' },
-      legend: { data: ['输入', '输出', '合计'], bottom: 0 },
+      legend: { data: legend, bottom: 0 },
       xAxis: { type: 'category', data: data.map((d) => d.date) },
       yAxis: { type: 'value' },
-      series: [
-        { name: '输入', type: 'line', data: data.map((d) => d.token_input_total),  itemStyle: { color: '#4a90d9' } },
-        { name: '输出', type: 'line', data: data.map((d) => d.token_output_total), itemStyle: { color: '#e6a23c' } },
-        { name: '合计', type: 'line', data: data.map((d) => d.token_total),        itemStyle: { color: '#67c23a' } },
-      ],
+      series,
     }, true);
   } catch (e) { console.error('loadMyTrend failed:', e); }
 }
@@ -680,13 +701,20 @@ async function loadMyRecentTable() {
   try {
     const data = await apiFetch('/my/trend');
     const last7 = data.slice(-7).reverse();
-    let html = '<table><thead><tr><th>日期</th><th>事件数</th><th>Token 输入</th><th>Token 输出</th><th>Token 合计</th></tr></thead><tbody>';
+    const hasCacheRead  = last7.some((d) => (d.token_cache_read_total  || 0) > 0);
+    const hasCacheWrite = last7.some((d) => (d.token_cache_write_total || 0) > 0);
+    let html = '<table><thead><tr><th>日期</th><th>事件数</th><th>Token 输入</th><th>Token 输出</th>';
+    if (hasCacheRead)  html += '<th>Cache 读</th>';
+    if (hasCacheWrite) html += '<th>Cache 写</th>';
+    html += '<th>Token 合计</th></tr></thead><tbody>';
     last7.forEach((d) => {
       html += `<tr>
         <td>${d.date}</td>
         <td>${fmt(d.event_count || 0)}</td>
         <td>${fmtK(d.token_input_total)}</td>
         <td>${fmtK(d.token_output_total)}</td>
+        ${hasCacheRead  ? `<td>${fmtK(d.token_cache_read_total  || 0)}</td>` : ''}
+        ${hasCacheWrite ? `<td>${fmtK(d.token_cache_write_total || 0)}</td>` : ''}
         <td>${fmtK(d.token_total)}</td>
       </tr>`;
     });
@@ -727,18 +755,31 @@ async function loadSummary() {
 async function loadTrend() {
   try {
     const data = await apiFetch('/stats/trend');
+    const hasCacheRead  = data.some(d => (d.token_cache_read_total  || 0) > 0);
+    const hasCacheWrite = data.some(d => (d.token_cache_write_total || 0) > 0);
+    const legend = ['输入', '输出'];
+    const series = [
+      { name: '输入', type: 'bar', stack: 'token', data: data.map(d => d.token_input_total),  itemStyle: { color: '#4a90d9' } },
+      { name: '输出', type: 'bar', stack: 'token', data: data.map(d => d.token_output_total), itemStyle: { color: '#67c23a' } },
+    ];
+    if (hasCacheRead) {
+      legend.push('Cache读');
+      series.push({ name: 'Cache读', type: 'bar', stack: 'token', data: data.map(d => d.token_cache_read_total || 0), itemStyle: { color: '#909399' } });
+    }
+    if (hasCacheWrite) {
+      legend.push('Cache写');
+      series.push({ name: 'Cache写', type: 'bar', stack: 'token', data: data.map(d => d.token_cache_write_total || 0), itemStyle: { color: '#c678dd' } });
+    }
+    legend.push('合计');
+    series.push({ name: '合计', type: 'line', data: data.map(d => d.token_total), itemStyle: { color: '#e6a23c' } });
     const chart = echarts.init(document.getElementById('chart-token-trend'));
     chart.setOption({
       tooltip: { trigger: 'axis' },
-      legend: { data: ['输入', '输出', '合计'], bottom: 0 },
+      legend: { data: legend, bottom: 0 },
       grid: { left: 60, right: 20, top: 10, bottom: 40 },
       xAxis: { type: 'category', data: data.map(d => d.date) },
       yAxis: { type: 'value', axisLabel: { formatter: v => fmtK(v) } },
-      series: [
-        { name: '输入', type: 'bar', stack: 'token', data: data.map(d => d.token_input_total), itemStyle: { color: '#4a90d9' } },
-        { name: '输出', type: 'bar', stack: 'token', data: data.map(d => d.token_output_total), itemStyle: { color: '#67c23a' } },
-        { name: '合计', type: 'line', data: data.map(d => d.token_total), itemStyle: { color: '#e6a23c' } },
-      ],
+      series,
     }, true);
     loadAgentDist();
   } catch (e) {
@@ -1210,7 +1251,10 @@ async function loadToolStats() {
       document.getElementById('update-kpi-row').innerHTML = [
         { label: '更新成功', value: fmt(s.success_count || 0), color: '#67c23a' },
         { label: '更新失败', value: fmt(s.failed_count || 0), color: '#f56c6c' },
-        { label: '涉及用户', value: fmt(s.user_count || 0), color: '#409eff' },
+        { label: '安装成功', value: fmt(s.install_success_count || 0), color: '#67c23a' },
+        { label: '安装失败', value: fmt(s.install_failed_count || 0), color: '#f56c6c' },
+        { label: '下载量',   value: fmt(s.download_count || 0),        color: '#8e44ad' },
+        { label: '涉及用户', value: fmt(s.user_count || 0),            color: '#409eff' },
       ].map(k => `<div class="kpi-card"><div class="kpi-value" style="color:${k.color}">${k.value}</div><div class="kpi-label">${k.label}</div></div>`).join('');
 
       // 各版本成功/失败柱状图
@@ -1264,6 +1308,36 @@ async function loadToolStats() {
         updHtml = '<div style="padding:16px;color:#999;text-align:center;">暂无更新记录</div>';
       }
       document.getElementById('update-version-table').innerHTML = updHtml;
+
+      // 各版本下载量
+      const dv = upd?.downloadsByVersion || [];
+      let dlHtml;
+      if (dv.length > 0) {
+        dlHtml = '<table><thead><tr><th>版本</th><th>下载次数</th></tr></thead><tbody>';
+        dv.forEach(d => {
+          dlHtml += `<tr><td>${esc(d.version)}</td><td>${fmt(d.count)}</td></tr>`;
+        });
+        dlHtml += '</tbody></table>';
+      } else {
+        dlHtml = '<div style="padding:16px;color:#999;text-align:center;">暂无下载记录</div>';
+      }
+      document.getElementById('download-version-table').innerHTML = dlHtml;
+
+      // 各版本首次安装结果
+      const iv = upd?.byInstallVersion || [];
+      let instHtml;
+      if (iv.length > 0) {
+        instHtml = '<table><thead><tr><th>版本</th><th>成功</th><th>失败</th><th>成功率</th></tr></thead><tbody>';
+        iv.forEach(d => {
+          const total = d.success + d.failed;
+          const rate = total ? ((d.success / total) * 100).toFixed(1) + '%' : '-';
+          instHtml += `<tr><td>${esc(d.version)}</td><td style="color:#67c23a">${fmt(d.success)}</td><td style="color:#f56c6c">${fmt(d.failed)}</td><td>${rate}</td></tr>`;
+        });
+        instHtml += '</tbody></table>';
+      } else {
+        instHtml = '<div style="padding:16px;color:#999;text-align:center;">暂无安装记录</div>';
+      }
+      document.getElementById('install-version-table').innerHTML = instHtml;
     } catch (e) {
       console.error('更新统计加载失败:', e);
     }

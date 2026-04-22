@@ -15,6 +15,7 @@ const CACHE_DIR = path.join(os.homedir(), '.agent-tools-server', 'cache');
 
 async function clientRoutes(fastify, opts) {
   const publicUrl = opts?.config?.server?.publicUrl;
+  const db = opts?.db;
   // --- GET /api/v1/client/version ---
   fastify.get('/api/v1/client/version', async () => {
     return { version: pkg.version };
@@ -42,6 +43,37 @@ async function clientRoutes(fastify, opts) {
       }
 
       const stat = fs.statSync(cachePath);
+
+      // Record the download — one event per HTTP request. We log at response
+      // start (not after completion) because fastify streams the reply and we
+      // don't easily get a "fully sent" callback; in practice a started
+      // download is a good enough proxy. Errors are swallowed.
+      if (db) {
+        try {
+          const ip = firstVal(request.headers['x-forwarded-for']) || request.ip || '';
+          const ua = (request.headers['user-agent'] || '').slice(0, 200);
+          const now = new Date().toISOString();
+          const eventId = crypto
+            .createHash('sha1')
+            .update(`${now}|${ip}|${ua}|${version}`)
+            .digest('hex');
+          db('events').insert({
+            event_id: eventId,
+            agent: 'agent-tools-cli',
+            agent_version: version,
+            username: '',
+            hostname: '',
+            platform: '',
+            session_id: `download_${now}`,
+            conversation_turn: 0,
+            event_type: 'download',
+            event_time: now,
+            received_time: now,
+            extra: JSON.stringify({ version, ip, user_agent: ua }),
+          }).onConflict('event_id').ignore().catch(() => {});
+        } catch {}
+      }
+
       reply
         .header('Content-Type', 'application/gzip')
         .header('Content-Disposition', 'attachment; filename="agent-tools-cli.tgz"')
