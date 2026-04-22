@@ -21,6 +21,21 @@ try {
     if (e.code === 'ERR_DLOPEN_FAILED' || /was compiled against a different/i.test(e.message)) {
       console.log('\n[agent-tools] 检测到 better-sqlite3 与当前 Node.js 版本不兼容，正在重新编译...');
       const pkgRoot = path.join(__dirname, '..');
+
+      // Remove stale native binaries so npm rebuild / prebuild-install fetches
+      // or recompiles a fresh one matching the current Node.js ABI. Without
+      // this, a partially-failed rebuild could leave the old binary in place.
+      const staleBinaryPaths = [
+        path.join(pkgRoot, 'node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node'),
+        path.join(pkgRoot, 'node_modules', 'better-sqlite3', 'build', 'Debug', 'better_sqlite3.node'),
+        path.join(pkgRoot, 'node_modules', 'better-sqlite3', 'prebuilds'),
+      ];
+      for (const p of staleBinaryPaths) {
+        try {
+          if (fs.existsSync(p)) fs.rmSync(p, { recursive: true, force: true });
+        } catch {}
+      }
+
       const rebuildResult = spawnSync(
         'npm', ['rebuild', 'better-sqlite3'],
         { stdio: 'inherit', shell: true, cwd: pkgRoot, timeout: 120000 },
