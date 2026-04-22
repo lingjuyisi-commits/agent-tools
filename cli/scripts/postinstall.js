@@ -2,7 +2,7 @@
 
 // Post-install script:
 // 1. Apply default-config.json (server URL pre-configured by server download API)
-// 2. Detect agents and suggest initialization
+// 2. Detect agents and auto-inject hooks
 // Must never fail the installation — wrap everything in try/catch.
 
 try {
@@ -137,7 +137,9 @@ try {
 
   if (!autoConfigured && !fs.existsSync(CONFIG_FILE)) {
     console.log('\n  [agent-tools] 未找到服务器配置（default-config.json）。');
-    console.log('               请从团队 Dashboard 的「下载客户端」下载完整安装包后重新安装。\n');
+    console.log('               发布安装: 请从团队 Dashboard 的「下载客户端」获取安装包后重新安装。');
+    console.log('               本地开发: 在包根目录创建 default-config.json 并写入 server.url，然后重新安装；');
+    console.log('                        或直接编辑 ~/.agent-tools/config.json。\n');
   }
 
   // --- Guard + cc-switch branching ---
