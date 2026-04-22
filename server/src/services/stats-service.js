@@ -123,7 +123,7 @@ async function getSummary(db, params) {
       db.raw('COALESCE(SUM(token_output), 0) as token_output_total'),
       db.raw('COALESCE(SUM(token_cache_read), 0) as token_cache_read_total'),
       db.raw('COALESCE(SUM(token_cache_write), 0) as token_cache_write_total'),
-      db.raw('COALESCE(SUM(token_input + token_output), 0) as token_total'),
+      db.raw('COALESCE(SUM(token_input + token_output + COALESCE(token_cache_read, 0) + COALESCE(token_cache_write, 0)), 0) as token_total'),
       db.raw('COALESCE(SUM(files_created), 0) as files_created_total'),
       db.raw('COALESCE(SUM(files_modified), 0) as files_modified_total'),
       db.raw('COALESCE(SUM(lines_added), 0) as lines_added_total'),
@@ -194,7 +194,7 @@ async function getRanking(db, params) {
   const limit = parseInt(params.limit, 10) || 2000;
 
   const metricMap = {
-    token_total: db.raw('SUM(token_input + token_output) as metric_value'),
+    token_total: db.raw('SUM(token_input + token_output + COALESCE(token_cache_read, 0) + COALESCE(token_cache_write, 0)) as metric_value'),
     token_input: db.raw('SUM(token_input) as metric_value'),
     token_output: db.raw('SUM(token_output) as metric_value'),
     session_count: db.raw('COUNT(DISTINCT session_id) as metric_value'),
@@ -276,7 +276,7 @@ async function getRankingAll(db, params) {
       'username',
       db.raw('COALESCE(SUM(token_input), 0) as token_input'),
       db.raw('COALESCE(SUM(token_output), 0) as token_output'),
-      db.raw('COALESCE(SUM(token_input + token_output), 0) as token_total'),
+      db.raw('COALESCE(SUM(token_input + token_output + COALESCE(token_cache_read, 0) + COALESCE(token_cache_write, 0)), 0) as token_total'),
       db.raw('COUNT(DISTINCT session_id) as session_count'),
       db.raw('COUNT(*) as event_count'),
       db.raw("SUM(CASE WHEN event_type = 'user_message' THEN 1 ELSE 0 END) as turn_count"),
@@ -391,7 +391,7 @@ async function getDrilldown(db, params) {
       db.raw('COUNT(DISTINCT session_id) as session_count'),
       db.raw('COALESCE(SUM(token_input), 0) as token_input_total'),
       db.raw('COALESCE(SUM(token_output), 0) as token_output_total'),
-      db.raw('COALESCE(SUM(token_input + token_output), 0) as token_total')
+      db.raw('COALESCE(SUM(token_input + token_output + COALESCE(token_cache_read, 0) + COALESCE(token_cache_write, 0)), 0) as token_total')
     )
     .where('username', username)
     .groupBy(groupBy)
@@ -449,7 +449,7 @@ async function getTrend(db, params) {
       db.raw('COUNT(DISTINCT session_id) as session_count'),
       db.raw('COALESCE(SUM(token_input), 0) as token_input_total'),
       db.raw('COALESCE(SUM(token_output), 0) as token_output_total'),
-      db.raw('COALESCE(SUM(token_input + token_output), 0) as token_total')
+      db.raw('COALESCE(SUM(token_input + token_output + COALESCE(token_cache_read, 0) + COALESCE(token_cache_write, 0)), 0) as token_total')
     )
     .groupBy(db.raw("SUBSTR(event_time, 1, 10)"))
     .orderBy('date', 'asc');
@@ -474,7 +474,7 @@ async function getRankingTrend(db, params) {
       db.raw(`${bucketExpr} as bucket`),
       db.raw('COALESCE(SUM(token_input), 0) as token_input'),
       db.raw('COALESCE(SUM(token_output), 0) as token_output'),
-      db.raw('COALESCE(SUM(token_input + token_output), 0) as token_total'),
+      db.raw('COALESCE(SUM(token_input + token_output + COALESCE(token_cache_read, 0) + COALESCE(token_cache_write, 0)), 0) as token_total'),
       db.raw('COUNT(DISTINCT session_id) as session_count'),
       db.raw('COUNT(*) as event_count'),
       db.raw('COALESCE(SUM(files_created), 0) as files_created'),

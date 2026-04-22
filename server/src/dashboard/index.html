@@ -594,7 +594,7 @@ function renderMyKpi(data) {
   const filesModified = data.files_modified_total || 0;
   const kpis = [
     { label: 'Token 合计', value: fmtK(data.token_total),
-      sub: `输入 ${fmtK(data.token_input_total)} / 输出 ${fmtK(data.token_output_total)}` },
+      sub: `输入 ${fmtK(data.token_input_total)} / 输出 ${fmtK(data.token_output_total)} / Cache读 ${fmtK(data.token_cache_read_total)}` },
     { label: '会话数',     value: fmt(data.session_count),
       sub: `${fmt(data.turn_count || 0)} 轮对话 / ${fmt(data.event_count)} 事件` },
     { label: '主机数',     value: fmt(data.host_count || 0), sub: '' },
@@ -685,7 +685,7 @@ async function loadSummary() {
     const kpis = [
       { label: '用户数', value: fmt(data.user_count), sub: `${fmt(data.host_count)} 台主机` },
       { label: '会话数', value: fmt(data.session_count), sub: `${fmt(data.turn_count || 0)} 轮对话 / ${fmt(data.event_count)} 事件` },
-      { label: 'Token 合计', value: fmtK(data.token_total), sub: `输入: ${fmtK(data.token_input_total)} / 输出: ${fmtK(data.token_output_total)}` },
+      { label: 'Token 合计', value: fmtK(data.token_total), sub: `输入: ${fmtK(data.token_input_total)} / 输出: ${fmtK(data.token_output_total)} / Cache读: ${fmtK(data.token_cache_read_total)}` },
       { label: '创建文件', value: fmt(data.files_created_total), sub: `修改: ${fmt(data.files_modified_total)}` },
       { label: '新增行数', value: fmt(data.lines_added_total), sub: `删除: ${fmt(data.lines_removed_total)}` },
     ];
