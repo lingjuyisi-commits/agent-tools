@@ -46,8 +46,57 @@ function findNpmByInstallPath() {
   return null;
 }
 
-function log(entry) {
-  appendLog(LOG_FILE, entry, 20);
+// Persist locally AND fire a best-effort direct POST. The local file is the
+// reliable channel (next sync piggy-backs it), but it depends on the user
+// triggering more hook events afterwards. Idle users would never report
+// upgrade outcomes — so we also POST directly here.
+//
+// Both paths reuse the same `entry.time` so the server's
+// `username|hostname|version|time|status` dedup hash collapses them into a
+// single event_id (no double counting).
+async function log(entry) {
+  const stamped = { time: new Date().toISOString(), ...entry };
+  appendLog(LOG_FILE, stamped, 20);
+  // Await so the worker process doesn't exit before the POST completes.
+  // The unref'd timer inside reportDirect caps the wait at 5s.
+  await reportDirect(stamped);
+}
+
+async function reportDirect(entry) {
+  if (typeof fetch !== 'function') return;
+
+  const CONFIG_FILE = path.join(os.homedir(), '.agent-tools', 'config.json');
+  let serverUrl = '';
+  let username = '';
+  try {
+    const cfg = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+    serverUrl = (cfg?.server?.url || '').replace(/\/+$/, '');
+    username = cfg?.username || '';
+  } catch {}
+  if (!serverUrl) return;
+  if (!username) {
+    try { username = os.userInfo().username; } catch { return; }
+  }
+
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 5000);
+  if (typeof timer.unref === 'function') timer.unref();
+
+  try {
+    await fetch(`${serverUrl}/api/v1/updates/report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username,
+        hostname: os.hostname(),
+        platform: os.platform(),
+        logs: [entry],
+      }),
+      signal: controller.signal,
+    });
+  } catch {} finally {
+    clearTimeout(timer);
+  }
 }
 
 async function main() {
@@ -93,9 +142,9 @@ async function main() {
       prefix = (r.stdout || '').trim();
     } catch {}
 
-    log({ status: 'success', version, from: require('../../package.json').version, npm: npmCmd, prefix });
+    await log({ status: 'success', version, from: require('../../package.json').version, npm: npmCmd, prefix });
   } catch (err) {
-    log({ status: 'failed', version, error: err.message });
+    await log({ status: 'failed', version, error: err.message });
   } finally {
     try { fs.rmSync(tmpDir, { recursive: true }); } catch {}
   }
