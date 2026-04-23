@@ -252,7 +252,12 @@ try {
     const failedStages = Object.keys(stageErrors);
     const status = failedStages.length === 0 ? 'install-success' : 'install-failed';
     const firstError = failedStages.length ? stageErrors[failedStages[0]] : null;
+    // IMPORTANT: generate `time` exactly once and use it for both the local
+    // log file AND the direct POST. The server dedup key is
+    // `username|hostname|version|time|status`; different timestamps across
+    // the two paths would hash to different event_ids and double-count.
     const entry = {
+      time: new Date().toISOString(),
       status,
       version: pkgVersion,
       stages,
@@ -264,6 +269,7 @@ try {
 
     // Persist to update-log.json — uploader.js will resend if the direct
     // POST below fails or if the server is temporarily unreachable.
+    // appendLog preserves the pre-set `entry.time`, keeping dedup intact.
     try {
       const { appendLog } = require('../src/utils/json-logger');
       const LOG_FILE = path.join(HOME, 'data', 'update-log.json');
@@ -279,17 +285,17 @@ try {
     } catch {}
 
     if (serverUrlForReport && typeof fetch === 'function') {
-      // Add a timestamp the server expects (appendLog adds it in-file; the
-      // direct POST must set it explicitly).
-      const logEntry = { ...entry, time: new Date().toISOString() };
       const payload = JSON.stringify({
         username: os.userInfo().username,
         hostname: os.hostname(),
         platform: os.platform(),
-        logs: [logEntry],
+        logs: [entry],
       });
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 5000);
+      // unref so a slow network doesn't hold the Node event loop open
+      // after postinstall's console output finishes.
+      if (typeof timer.unref === 'function') timer.unref();
       fetch(`${serverUrlForReport}/api/v1/updates/report`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

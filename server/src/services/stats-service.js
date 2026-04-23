@@ -57,6 +57,12 @@ function computeDateRange(params) {
 
 /**
  * Apply common filters (date range, model, user, hostname, agent) to a Knex query.
+ *
+ * Also excludes synthetic lifecycle events (`download` / `update`) that
+ * /api/v1/client/download and /api/v1/updates/report write into the `events`
+ * table. They are not real user activity and would inflate session_count,
+ * event_count, and user counts in trend / summary / ranking views. Lifecycle
+ * stats have their own dedicated endpoint at /api/v1/stats/updates.
  */
 function applyFilters(query, params) {
   const range = computeDateRange(params);
@@ -66,6 +72,8 @@ function applyFilters(query, params) {
     query.where('event_time', '>=', range.start)
          .where('event_time', '<', range.end + 'T23:59:59.999Z');
   }
+
+  query.whereNotIn('event_type', ['download', 'update']);
 
   if (params.model) query.where('model', params.model);
   if (params.user) query.where('username', params.user);
