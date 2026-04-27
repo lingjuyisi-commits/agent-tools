@@ -94,6 +94,10 @@ function processEvent(agent, eventType, rawData, dbPath) {
     try {
       store.insert(event);
 
+      // ── Repo-commit tracking side effects ─────────────────────────────
+      // All swallowed — must never crash the agent. See doc/15-*.
+      try { trackRepoLifecycle(store, eventType, rawData, event); } catch {}
+
       // Check if we should trigger a background sync.
       // Two conditions (either one triggers sync):
       //   1. Batch threshold: unsynced events >= batchSize (default 100)
@@ -140,6 +144,138 @@ function processEvent(agent, eventType, rawData, dbPath) {
   }
 
   process.exit(0);
+}
+
+// ── Repo-commit tracking ──────────────────────────────────────────────────
+// Three integration points across the session lifecycle:
+//
+//   SessionStart  → record start_time + cwd + git context in session_meta
+//   PostToolUse   → if Edit/Write/NotebookEdit, add the touched file to the
+//                   session's edit_files set (used later for AI attribution)
+//   SessionEnd    → run `git log --numstat --since=<start>` in cwd, classify
+//                   each commit as in_intersect (touched at least one
+//                   edit_files entry) and emit a synthetic `session_commits`
+//                   event carrying both window and intersect totals
+//
+// All work is best-effort and inside try/catch — a non-git cwd, missing git
+// binary, or empty result must result in a no-op, never a thrown error.
+function trackRepoLifecycle(store, eventType, rawData, event) {
+  const sessionId = event.session_id;
+  if (!sessionId || sessionId === 'unknown') return;
+
+  if (eventType === 'SessionStart') {
+    store.upsertSessionMeta(sessionId, {
+      start_time: event.event_time,
+      cwd: event.cwd || null,
+      git_remote_url: event.git_remote_url || null,
+      git_author_email: event.git_author_email || null,
+    });
+    return;
+  }
+
+  if (eventType === 'PostToolUse') {
+    // Use the file path from the raw tool_input. The adapter already counted
+    // lines but didn't preserve the path. Edit/Write/NotebookEdit all use
+    // `file_path`, so a single lookup covers them.
+    const input = rawData.tool_input || {};
+    const filePath = input.file_path || input.notebook_path || null;
+    if (filePath) store.addSessionEditFile(sessionId, filePath);
+    return;
+  }
+
+  if (eventType === 'SessionEnd') {
+    emitSessionCommits(store, sessionId, event);
+    return;
+  }
+}
+
+function emitSessionCommits(store, sessionId, sessionEndEvent) {
+  const meta = store.getSessionMeta(sessionId);
+  // SessionStart writes meta.cwd + meta.git_author_email + meta.git_remote_url
+  // when in a tracked repo. If any of those are missing, this isn't a
+  // tracked-repo session — skip entirely without re-shelling out to git.
+  if (!meta || !meta.cwd || !meta.git_author_email || !meta.git_remote_url) return;
+
+  const git = require('../utils/git');
+  const cwd = meta.cwd;
+  const email = meta.git_author_email;
+  const remote = meta.git_remote_url;
+
+  // Fall back to 24h ago if we somehow don't have a start_time. Better to
+  // overcount than to skip the whole session.
+  const since = meta.start_time || new Date(Date.now() - 86400_000).toISOString();
+  const commits = git.getCommitsSince(cwd, email, since);
+  if (!commits || commits.length === 0) return;
+
+  let editFiles = [];
+  try { editFiles = JSON.parse(meta.edit_files || '[]'); } catch {}
+  const editSet = new Set(Array.isArray(editFiles) ? editFiles : []);
+
+  const window = { commit_count: 0, lines_added: 0, lines_removed: 0 };
+  const intersect = { commit_count: 0, lines_added: 0, lines_removed: 0 };
+  const detailed = [];
+
+  for (const c of commits) {
+    window.commit_count += 1;
+    window.lines_added += c.added;
+    window.lines_removed += c.removed;
+
+    let inIntersect = false;
+    let iAdded = 0;
+    let iRemoved = 0;
+    if (editSet.size > 0) {
+      for (const f of c.files) {
+        if (editSet.has(f.path)) {
+          inIntersect = true;
+          iAdded += f.added;
+          iRemoved += f.removed;
+        }
+      }
+    }
+    if (inIntersect) {
+      intersect.commit_count += 1;
+      intersect.lines_added += iAdded;
+      intersect.lines_removed += iRemoved;
+    }
+
+    detailed.push({
+      hash: c.hash,
+      time: c.time,
+      subject: c.subject,
+      in_intersect: inIntersect,
+      lines_added: c.added,
+      lines_removed: c.removed,
+      lines_added_intersect: iAdded,
+      lines_removed_intersect: iRemoved,
+      files: c.files,
+    });
+  }
+
+  const { createNormalizedEvent } = require('../collector/event-normalizer');
+  const commitEvent = createNormalizedEvent({
+    agent: sessionEndEvent.agent,
+    session_id: sessionId,
+    event_type: 'session_commits',
+    cwd,
+    git_remote_url: remote,
+    git_author_email: email,
+    // Top-level columns mirror the WINDOW totals so existing aggregations
+    // (sum lines_added etc.) remain meaningful for this event_type.
+    lines_added: window.lines_added,
+    lines_removed: window.lines_removed,
+    files_modified: detailed.reduce(
+      (acc, c) => acc + new Set(c.files.map(f => f.path)).size,
+      0,
+    ),
+    extra: {
+      edit_files: Array.from(editSet),
+      window,
+      intersect,
+      commits: detailed,
+    },
+  });
+
+  store.insert(commitEvent);
 }
 
 main().catch(() => process.exit(0));

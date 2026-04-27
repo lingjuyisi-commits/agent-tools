@@ -1,5 +1,6 @@
 const fs = require('fs');
 const { computeDelta } = require('../../utils/token-snapshots');
+const git = require('../../utils/git');
 
 function normalize(eventType, rawData) {
   const base = {
@@ -13,6 +14,25 @@ function normalize(eventType, rawData) {
 
   // model is only available in SessionStart hook payload
   if (rawData.model) base.model = rawData.model;
+
+  // ── Working directory & git context ─────────────────────────────────────
+  // Claude Code passes `cwd` in the hook payload. We deliberately do NOT
+  // fall back to process.cwd(): the hook subprocess can be spawned from a
+  // different directory than the agent's workspace, which would silently
+  // mis-attribute edits to the wrong repo. Better to record nothing than
+  // wrong data.
+  const cwd = rawData.cwd || null;
+  if (cwd) base.cwd = cwd;
+
+  // Only run git on SessionStart — every other event would re-shell out
+  // hundreds of times per session for no benefit. Server-side joins by
+  // session_id already attribute later events to the same repo.
+  if (eventType === 'SessionStart' && cwd) {
+    const remote = git.getRemoteUrl(cwd);
+    if (remote) base.git_remote_url = remote;
+    const email = git.getAuthorEmail(cwd);
+    if (email) base.git_author_email = email;
+  }
 
   // ── File change extraction (PostToolUse) ────────────────────────────────
   // Claude Code hook payloads do NOT include file change metrics directly.

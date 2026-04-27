@@ -4,7 +4,10 @@
  * (confirmed by ops). A user with no uploaded data simply gets empty numbers.
  */
 
-const { getSummary, getTrend, getDrilldown } = require('../services/stats-service');
+const {
+  getSummary, getTrend, getDrilldown,
+  getRepoSummary, getRepoRanking, getRepoTrend, getRepoCommits,
+} = require('../services/stats-service');
 
 // applyFilters in stats-service skips the username WHERE clause when
 // `user` is falsy. An empty-string login (malformed session, edge race)
@@ -43,6 +46,36 @@ async function myRoutes(fastify, opts) {
     const username = requireSelf(request, reply);
     if (!username) return;
     return getDrilldown(db, { ...request.query, username });
+  });
+
+  // ── Repo-commit tracking — auto-scoped to the caller ────────────────────
+  // Note: `groupBy` is forced to 'repo' for /my/repos/ranking — disallowing
+  // 'user' / 'user_repo' prevents an authenticated user from seeing other
+  // people's data via the ranking endpoint. The service layer would also
+  // honor `user`, but defense-in-depth.
+
+  fastify.get('/api/v1/my/repos/summary', async (request, reply) => {
+    const username = requireSelf(request, reply);
+    if (!username) return;
+    return getRepoSummary(db, { ...request.query, user: username });
+  });
+
+  fastify.get('/api/v1/my/repos/ranking', async (request, reply) => {
+    const username = requireSelf(request, reply);
+    if (!username) return;
+    return getRepoRanking(db, { ...request.query, user: username, groupBy: 'repo' });
+  });
+
+  fastify.get('/api/v1/my/repos/trend', async (request, reply) => {
+    const username = requireSelf(request, reply);
+    if (!username) return;
+    return getRepoTrend(db, { ...request.query, user: username });
+  });
+
+  fastify.get('/api/v1/my/repos/commits', async (request, reply) => {
+    const username = requireSelf(request, reply);
+    if (!username) return;
+    return getRepoCommits(db, { ...request.query, user: username });
   });
 }
 

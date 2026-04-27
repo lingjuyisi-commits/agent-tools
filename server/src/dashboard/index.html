@@ -121,6 +121,7 @@
     <button id="btn-ranking"  onclick="switchTab('ranking')">排名</button>
     <button id="btn-drilldown" onclick="switchTab('drilldown')">钻取</button>
     <button id="btn-tools"    onclick="switchTab('tools')">工具与技能</button>
+    <button id="btn-repos"    onclick="switchTab('repos')">代码量</button>
     <button id="btn-admin"    onclick="switchTab('admin')" style="display:none;">管理员管理</button>
   </div>
 
@@ -173,6 +174,19 @@
       <div class="ranking-section">
         <h3>最近 7 天</h3>
         <div class="ranking-table" id="my-recent-table"></div>
+      </div>
+      <!-- 我的代码量 -->
+      <div id="my-repos-section" style="display:none;">
+        <div class="kpi-row" id="my-repo-kpi-row"></div>
+        <div class="ranking-section">
+          <h3>我的仓库代码量
+            <span style="font-weight:normal;font-size:12px;color:#999;margin-left:8px;">
+              <label><input type="radio" name="my-repo-mode" value="intersect" checked onchange="loadMyRepos()"> 交集</label>
+              <label style="margin-left:8px;"><input type="radio" name="my-repo-mode" value="window" onchange="loadMyRepos()"> 窗口</label>
+            </span>
+          </h3>
+          <div class="ranking-table" id="my-repo-table"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -292,6 +306,35 @@
     <div class="ranking-section">
       <h3>各版本首次安装结果</h3>
       <div class="ranking-table" id="install-version-table"></div>
+    </div>
+  </div>
+
+  <!-- 代码量 Tab -->
+  <div id="tab-repos" class="tab-content">
+    <div style="padding:16px 24px 0;display:flex;flex-wrap:wrap;align-items:center;gap:16px;">
+      <span style="font-size:13px;color:#666;">视角:</span>
+      <label style="font-size:13px;"><input type="radio" name="repo-view" value="user" checked onchange="loadReposTab()"> 开发者</label>
+      <label style="font-size:13px;"><input type="radio" name="repo-view" value="repo" onchange="loadReposTab()"> 仓库</label>
+      <span style="font-size:13px;color:#666;margin-left:16px;">口径:</span>
+      <label style="font-size:13px;"><input type="radio" name="repo-mode" value="intersect" checked onchange="loadReposTab()"> 交集（推荐）</label>
+      <label style="font-size:13px;"><input type="radio" name="repo-mode" value="window" onchange="loadReposTab()"> 窗口</label>
+      <select id="repo-filter-repo" onchange="loadReposTab()" style="margin-left:16px;padding:4px 8px;font-size:13px;">
+        <option value="">所有仓库</option>
+      </select>
+      <select id="repo-filter-dev" onchange="loadReposTab()" style="padding:4px 8px;font-size:13px;">
+        <option value="">所有开发者</option>
+      </select>
+    </div>
+    <div class="kpi-row" id="repo-kpi-row"></div>
+    <div class="charts-grid">
+      <div class="chart-card">
+        <h3>编辑 / 提交 / 保留率 趋势</h3>
+        <div id="chart-repo-trend" class="chart-container" style="height:340px;"></div>
+      </div>
+    </div>
+    <div class="ranking-section">
+      <h3 id="repo-ranking-title">开发者排行</h3>
+      <div class="ranking-table" id="repo-ranking-table"></div>
     </div>
   </div>
 
@@ -447,8 +490,9 @@ async function checkAuth() {
     if (isAdmin) {
       document.getElementById('btn-admin').style.display = '';
     } else {
-      // Non-admin: hide fleet-wide tabs.
-      ['btn-overview', 'btn-ranking', 'btn-drilldown', 'btn-tools'].forEach((id) => {
+      // Non-admin: hide fleet-wide tabs (including 代码量统计 — repo stats
+      // for everyone live behind /api/v1/stats/repos/* which is admin-gated).
+      ['btn-overview', 'btn-ranking', 'btn-drilldown', 'btn-tools', 'btn-repos'].forEach((id) => {
         document.getElementById(id).style.display = 'none';
       });
     }
@@ -566,6 +610,7 @@ function loadTabData(name) {
   if (name === 'ranking')   loadRanking();
   if (name === 'drilldown') { loadDrilldownUsers(); loadDrilldown(true); }
   if (name === 'tools')     loadToolStats();
+  if (name === 'repos')     { loadRepoFilters(); loadReposTab(); }
   if (name === 'admin')     loadAdminUsers();
 }
 
@@ -607,6 +652,8 @@ async function refreshMy() {
   loadMyTrend();
   loadMyPies();
   loadMyRecentTable();
+  // Personal repo-commit panel — independently fetched, hides itself if no data.
+  loadMyRepos();
 }
 
 function renderMyKpi(data) {
@@ -1353,6 +1400,236 @@ function fmtK(n) {
   if (n >= 1000000) return (n / 1000000).toFixed(1) + 'M';
   if (n >= 1000) return (n / 1000).toFixed(1) + 'K';
   return n.toLocaleString();
+}
+
+// ===== 代码量统计 (admin) =====
+//
+// Single dashboard tab driven by:
+//   - 视角 (radio):  user (default) | repo
+//   - 口径 (radio):  intersect (default) | window
+//   - filters:       repo dropdown, dev dropdown, global date range
+//
+// One state object is read by every loader; flip a radio → loadReposTab()
+// re-pulls summary / trend / ranking with the new params. No client-side
+// caching — keeps the code small at the cost of an extra round-trip.
+
+function getRepoMode() {
+  return document.querySelector('input[name="repo-mode"]:checked')?.value || 'intersect';
+}
+function getRepoView() {
+  return document.querySelector('input[name="repo-view"]:checked')?.value || 'user';
+}
+function getRepoExtraParams() {
+  const p = {};
+  const repo = document.getElementById('repo-filter-repo')?.value;
+  const dev  = document.getElementById('repo-filter-dev')?.value;
+  if (repo) p.repo = repo;
+  if (dev)  p.gitEmail = dev;
+  return p;
+}
+
+async function loadRepoFilters() {
+  try {
+    const [repos, devs] = await Promise.all([
+      apiFetch('/stats/repos/list'),
+      apiFetch('/stats/repos/developers'),
+    ]);
+    const rSel = document.getElementById('repo-filter-repo');
+    if (rSel && Array.isArray(repos)) {
+      const cur = rSel.value;
+      rSel.innerHTML = '<option value="">所有仓库</option>'
+        + repos.map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join('');
+      rSel.value = cur;
+    }
+    const dSel = document.getElementById('repo-filter-dev');
+    if (dSel && Array.isArray(devs)) {
+      const cur = dSel.value;
+      dSel.innerHTML = '<option value="">所有开发者</option>'
+        + devs.map(d => `<option value="${esc(d.git_author_email)}">${esc(d.git_author_email)}${d.username ? ' (' + esc(d.username) + ')' : ''}</option>`).join('');
+      dSel.value = cur;
+    }
+  } catch {}
+}
+
+async function loadReposTab() {
+  const mode = getRepoMode();           // intersect | window
+  const view = getRepoView();           // user | repo
+  const extra = getRepoExtraParams();
+  document.getElementById('repo-ranking-title').textContent = view === 'user' ? '开发者排行' : '仓库排行';
+  await Promise.all([
+    loadRepoSummary(mode, extra),
+    loadRepoTrend(mode, extra),
+    loadRepoRanking(view, mode, extra),
+  ]);
+}
+
+async function loadRepoSummary(mode, extra) {
+  let data;
+  try { data = await apiFetch('/stats/repos/summary', extra); }
+  catch (e) { document.getElementById('repo-kpi-row').innerHTML = `<div class="error">${e.message}</div>`; return; }
+
+  const c = mode === 'window' ? data.commit_window : data.commit_intersect;
+  const editAdded = data.edit?.lines_added || 0;
+  const retention = editAdded > 0 ? ((c.lines_added / editAdded) * 100).toFixed(1) + '%' : '—';
+  const churn     = editAdded > 0 ? ((data.edit.lines_removed / editAdded) * 100).toFixed(1) + '%' : '—';
+
+  const kpis = [
+    { label: '编辑+',    value: fmtK(editAdded), sub: [`编辑- ${fmtK(data.edit.lines_removed)}`, `Churn ${churn}`] },
+    { label: '提交+',    value: fmtK(c.lines_added), sub: [`Commit ${c.commit_count}`, `提交- ${fmtK(c.lines_removed)}`] },
+    { label: '保留率',   value: retention, sub: [`口径: ${mode === 'window' ? '窗口' : '交集'}`] },
+    { label: '涉及仓库', value: data.repo_count || 0, sub: [] },
+    { label: '涉及开发者', value: data.developer_count || 0, sub: [] },
+    { label: 'Session 数', value: data.session_count || 0, sub: [] },
+  ];
+  document.getElementById('repo-kpi-row').innerHTML = kpis.map(k => `
+    <div class="kpi-card">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-value">${k.value}</div>
+      <div class="kpi-sub">${(k.sub || []).filter(Boolean).join(' · ')}</div>
+    </div>
+  `).join('');
+}
+
+async function loadRepoTrend(mode, extra) {
+  let rows;
+  try { rows = await apiFetch('/stats/repos/trend', extra); }
+  catch (e) { return; }
+  const dom = document.getElementById('chart-repo-trend');
+  const chart = echarts.getInstanceByDom(dom) || echarts.init(dom);
+  const dates = rows.map(r => r.date);
+  const editAdd = rows.map(r => r.edit_added || 0);
+  const cAdd = rows.map(r => mode === 'window' ? (r.commit_added_window || 0) : (r.commit_added_intersect || 0));
+  const ret = rows.map(r => {
+    const v = mode === 'window' ? r.retention_window : r.retention_intersect;
+    return v ? Math.round(v * 1000) / 10 : 0;
+  });
+  chart.setOption({
+    tooltip: { trigger: 'axis' },
+    legend: { data: ['编辑+', '提交+', '保留率%'] },
+    xAxis: { type: 'category', data: dates },
+    yAxis: [
+      { type: 'value', name: '行数' },
+      { type: 'value', name: '保留率%', max: 100 },
+    ],
+    series: [
+      { name: '编辑+', type: 'line', data: editAdd, smooth: true },
+      { name: '提交+', type: 'line', data: cAdd,    smooth: true },
+      { name: '保留率%', type: 'line', yAxisIndex: 1, data: ret, smooth: true, lineStyle: { type: 'dashed' } },
+    ],
+  }, true);
+}
+
+async function loadRepoRanking(view, mode, extra) {
+  const metric = mode === 'window' ? 'commit_added_window' : 'commit_added_intersect';
+  let data;
+  try {
+    data = await apiFetch('/stats/repos/ranking', { ...extra, groupBy: view, metric, limit: 100 });
+  } catch (e) {
+    document.getElementById('repo-ranking-table').innerHTML = `<div class="error">${e.message}</div>`;
+    return;
+  }
+  const rows = data.rows || [];
+  const headerLabel = view === 'user' ? '开发者' : '仓库';
+  const lastCol = view === 'user' ? '涉及仓库' : '涉及人数';
+  const cWindow = mode === 'window';
+
+  const html = `
+    <table>
+      <thead><tr>
+        <th>${headerLabel}</th>
+        <th>编辑+</th><th>编辑-</th>
+        <th>提交+</th><th>提交-</th>
+        <th>保留率</th>
+        <th>Commit</th>
+      </tr></thead>
+      <tbody>
+        ${rows.map(r => {
+          const editAdded = r.edit_added || 0;
+          const cAdded    = cWindow ? (r.commit_added_window || 0)   : (r.commit_added_intersect || 0);
+          const cRemoved  = cWindow ? (r.commit_removed_window || 0) : (r.commit_removed_intersect || 0);
+          const cCount    = cWindow ? (r.commit_count_window || 0)   : (r.commit_count_intersect || 0);
+          const ret       = cWindow ? r.retention_window : r.retention_intersect;
+          const retPct    = ret ? (ret * 100).toFixed(1) + '%' : '—';
+          const label     = view === 'user' ? (r.username || '—') : (r.git_remote_url || '—');
+          return `<tr>
+            <td>${esc(label)}</td>
+            <td>${fmtK(editAdded)}</td>
+            <td>${fmtK(r.edit_removed || 0)}</td>
+            <td>${fmtK(cAdded)}</td>
+            <td>${fmtK(cRemoved)}</td>
+            <td>${retPct}</td>
+            <td>${cCount}</td>
+          </tr>`;
+        }).join('')}
+        ${rows.length === 0 ? '<tr><td colspan="7" style="text-align:center;color:#999;padding:24px;">暂无数据。请确认服务端 ~/.agent-tools-server/config.json 已配置 repoTracking.allowedDomains。</td></tr>' : ''}
+      </tbody>
+    </table>
+  `;
+  document.getElementById('repo-ranking-table').innerHTML = html;
+}
+
+// ===== 我的代码量 (personal — auto-scoped to req.user.login) =====
+async function loadMyRepos() {
+  let summary, ranking;
+  try {
+    [summary, ranking] = await Promise.all([
+      apiFetch('/my/repos/summary'),
+      apiFetch('/my/repos/ranking', { metric: 'commit_added_intersect', limit: 100 }),
+    ]);
+  } catch (e) {
+    // 401 / endpoint missing → silently hide. Don't show errors on the
+    // personal tab when the feature is just not configured.
+    document.getElementById('my-repos-section').style.display = 'none';
+    return;
+  }
+  // Don't show the section if this user has no repo-attributable data.
+  const hasData = (summary?.commit_intersect?.commit_count || 0) > 0
+               || (summary?.commit_window?.commit_count || 0) > 0
+               || (summary?.edit?.lines_added || 0) > 0;
+  document.getElementById('my-repos-section').style.display = hasData ? '' : 'none';
+  if (!hasData) return;
+
+  const mode = document.querySelector('input[name="my-repo-mode"]:checked')?.value || 'intersect';
+  const c = mode === 'window' ? summary.commit_window : summary.commit_intersect;
+  const editAdded = summary.edit?.lines_added || 0;
+  const retention = editAdded > 0 ? ((c.lines_added / editAdded) * 100).toFixed(1) + '%' : '—';
+
+  const kpis = [
+    { label: '编辑+',     value: fmtK(editAdded), sub: [`编辑- ${fmtK(summary.edit.lines_removed)}`] },
+    { label: '提交+',     value: fmtK(c.lines_added), sub: [`Commit ${c.commit_count}`] },
+    { label: '保留率',    value: retention, sub: [`口径: ${mode === 'window' ? '窗口' : '交集'}`] },
+    { label: '涉及仓库',  value: summary.repo_count || 0, sub: [] },
+  ];
+  document.getElementById('my-repo-kpi-row').innerHTML = kpis.map(k => `
+    <div class="kpi-card">
+      <div class="kpi-label">${k.label}</div>
+      <div class="kpi-value">${k.value}</div>
+      <div class="kpi-sub">${(k.sub || []).filter(Boolean).join(' · ')}</div>
+    </div>
+  `).join('');
+
+  const rows = ranking?.rows || [];
+  const cWindow = mode === 'window';
+  document.getElementById('my-repo-table').innerHTML = `
+    <table>
+      <thead><tr><th>仓库</th><th>编辑+</th><th>提交+</th><th>保留率</th><th>Commit</th></tr></thead>
+      <tbody>
+        ${rows.map(r => {
+          const cAdded  = cWindow ? (r.commit_added_window || 0) : (r.commit_added_intersect || 0);
+          const cCount  = cWindow ? (r.commit_count_window || 0) : (r.commit_count_intersect || 0);
+          const ret     = cWindow ? r.retention_window : r.retention_intersect;
+          return `<tr>
+            <td>${esc(r.git_remote_url || '—')}</td>
+            <td>${fmtK(r.edit_added || 0)}</td>
+            <td>${fmtK(cAdded)}</td>
+            <td>${ret ? (ret * 100).toFixed(1) + '%' : '—'}</td>
+            <td>${cCount}</td>
+          </tr>`;
+        }).join('')}
+        ${rows.length === 0 ? '<tr><td colspan="5" style="text-align:center;color:#999;padding:16px;">暂无仓库代码量数据</td></tr>' : ''}
+      </tbody>
+    </table>
+  `;
 }
 
 // ===== 自适应 =====

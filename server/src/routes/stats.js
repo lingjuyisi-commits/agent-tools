@@ -5,7 +5,13 @@ const {
   getDrilldown,
   getTrend,
   getRankingTrend,
-  computeDateRange
+  computeDateRange,
+  getRepoSummary,
+  getRepoRanking,
+  getRepoTrend,
+  getRepoList,
+  getRepoDeveloperList,
+  getRepoCommits,
 } = require('../services/stats-service');
 const { getDisplayNameMap } = require('../services/user-profile-service');
 
@@ -183,6 +189,34 @@ async function statsRoutes(fastify, opts) {
   // daily_stats.display_name (fallback for users we haven't imported yet).
   fastify.get('/api/v1/stats/user-names', async (request, reply) => {
     return getDisplayNameMap(db);
+  });
+
+  // ── Repo-commit tracking endpoints (admin only — protected at app level) ──
+  fastify.get('/api/v1/stats/repos/summary', async (request) => {
+    return getRepoSummary(db, request.query);
+  });
+
+  fastify.get('/api/v1/stats/repos/ranking', async (request) => {
+    return getRepoRanking(db, request.query);
+  });
+
+  fastify.get('/api/v1/stats/repos/trend', async (request) => {
+    return getRepoTrend(db, request.query);
+  });
+
+  fastify.get('/api/v1/stats/repos/list', async () => {
+    return getRepoList(db);
+  });
+
+  fastify.get('/api/v1/stats/repos/developers', async () => {
+    return getRepoDeveloperList(db);
+  });
+
+  fastify.get('/api/v1/stats/repos/commits', async (request, reply) => {
+    if (!request.query.repo && !request.query.user && !request.query.gitEmail) {
+      return reply.status(400).send({ error: 'one of repo / user / gitEmail is required' });
+    }
+    return getRepoCommits(db, request.query);
   });
 }
 

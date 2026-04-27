@@ -501,4 +501,413 @@ async function getRankingTrend(db, params) {
   return query;
 }
 
-module.exports = { getSummary, getRanking, getRankingAll, getDrilldown, getTrend, getRankingTrend, computeDateRange };
+// ── Repo-commit tracking stats ────────────────────────────────────────────
+//
+// Two data sources collaborate:
+//   1. `events` table — per-tool-call edit lines on `tool_use` events. Edit
+//      events themselves carry no repo URL; we derive it via a CTE that
+//      joins to `session_start` events on session_id (where the adapter
+//      wrote git_remote_url at session boundary).
+//   2. `commit_facts` table — one row per (commit_hash, repo). Source of
+//      truth for "提交+/−". Already deduped across overlapping sessions.
+//
+// `applyRepoFilters` is intentionally separate from `applyFilters` —
+// they operate on different tables (commit_facts has no event_type) and
+// commit-window filters use commit_time, not event_time.
+
+function applyDateRange(query, params, column) {
+  const range = computeDateRange(params);
+  if (range) {
+    query.where(column, '>=', range.start)
+         .where(column, '<', range.end + 'T23:59:59.999Z');
+  }
+}
+
+/** Apply user/repo filters to a commit_facts query. */
+function applyCommitFactFilters(query, params) {
+  applyDateRange(query, params, 'commit_time');
+  if (params.repo)         query.where('git_remote_url', params.repo);
+  if (params.gitEmail)     query.where('git_author_email', params.gitEmail);
+  if (params.user)         query.where('username', params.user);
+  return query;
+}
+
+/**
+ * Build the per-session repo map as a CTE-style subquery factory. Edit-line
+ * stats need it because `tool_use` events themselves don't carry repo info.
+ * Calling code does:
+ *     .leftJoin(sessionRepoSub(db).as('sr'), 'events.session_id', 'sr.session_id')
+ * to bring `git_remote_url` and `git_author_email` along for grouping.
+ *
+ * If a session has multiple session_start rows (replay, restart in another
+ * directory), pick the EARLIEST by event_time. Using MAX() would be
+ * non-deterministic across repo URLs and silently misattribute edits to the
+ * "alphabetically larger" repo. Using the earliest matches user intent: the
+ * repo they were in when they started — later edits stay attributed to it
+ * even if they cd'd elsewhere mid-session, which is the conservative default.
+ *
+ * Why subquery (not knex `.with()`)? — better-sqlite3 supports both, but the
+ * subquery form composes more cleanly with applyFilters(...) chains.
+ */
+function sessionRepoSub(db) {
+  // Use a correlated MIN(event_time) per session, then a self-join to pluck
+  // the row whose event_time matches. Equivalent to ROW_NUMBER() OVER but
+  // works on every dialect knex supports without window functions.
+  //
+  // Tiebreaker: event_time has 1-second resolution. Two session_start rows
+  // for the same session can share event_time (replay, restart in same
+  // second). Without a tiebreaker the inner join would return BOTH rows
+  // and downstream LEFT JOIN would double-count edit lines. We wrap the
+  // inner join in an outer aggregation with MIN(git_remote_url) — collapses
+  // to one row per session deterministically, even on collision.
+  const earliest = db('events')
+    .select('session_id')
+    .min('event_time as min_time')
+    .where('event_type', 'session_start')
+    .whereNotNull('git_remote_url')
+    .groupBy('session_id')
+    .as('e1');
+
+  const tied = db('events as e2')
+    .select('e2.session_id', 'e2.git_remote_url', 'e2.git_author_email')
+    .innerJoin(earliest, function () {
+      this.on('e2.session_id', '=', 'e1.session_id')
+        .andOn('e2.event_time', '=', 'e1.min_time');
+    })
+    .where('e2.event_type', 'session_start')
+    .whereNotNull('e2.git_remote_url')
+    .as('tied');
+
+  return db(tied)
+    .select('session_id')
+    .min('git_remote_url as git_remote_url')
+    .min('git_author_email as git_author_email')
+    .groupBy('session_id');
+}
+
+/**
+ * Edit-side aggregates for a date / user / repo filter, attributed to repos
+ * via the session_start join. Returns:
+ *   { lines_added, lines_removed, lines_net, files_touched, ops_count, sessions }
+ *
+ * `commit_facts` is a separate concern — combine with `getCommitAggregates`.
+ */
+async function getEditAggregates(db, params) {
+  const sub = sessionRepoSub(db).as('sr');
+  let q = db('events')
+    .leftJoin(sub, 'events.session_id', 'sr.session_id')
+    .select(
+      db.raw('COALESCE(SUM(events.lines_added), 0) as lines_added'),
+      db.raw('COALESCE(SUM(events.lines_removed), 0) as lines_removed'),
+      db.raw('COALESCE(SUM(COALESCE(events.files_created, 0) + COALESCE(events.files_modified, 0)), 0) as files_touched'),
+      db.raw("SUM(CASE WHEN events.event_type = 'tool_use' THEN 1 ELSE 0 END) as ops_count"),
+      db.raw('COUNT(DISTINCT events.session_id) as sessions')
+    )
+    .where('events.event_type', 'tool_use');
+
+  applyDateRange(q, params, 'events.event_time');
+  if (params.user)     q.where('events.username', params.user);
+  if (params.repo)     q.where('sr.git_remote_url', params.repo);
+  if (params.gitEmail) q.where('sr.git_author_email', params.gitEmail);
+  // When repo filter is active and we only want repo-attributable edits,
+  // require the join to have matched. Without a repo filter, we still want
+  // global edit totals — but for repo stats specifically the caller usually
+  // passes `requireRepo=true` to drop sessions that aren't tracked.
+  if (params.requireRepo) q.whereNotNull('sr.git_remote_url');
+
+  const r = (await q)[0] || {};
+  return {
+    lines_added: num(r.lines_added),
+    lines_removed: num(r.lines_removed),
+    lines_net: num(r.lines_added) - num(r.lines_removed),
+    files_touched: num(r.files_touched),
+    ops_count: num(r.ops_count),
+    sessions: num(r.sessions),
+  };
+}
+
+/**
+ * Boolean truthiness expression for `in_intersect` that works on every
+ * dialect we support, without requiring an explicit comparison literal:
+ *   - SQLite stores `t.boolean()` as INTEGER (0/1). `CASE WHEN <int>` treats
+ *     non-zero as true.
+ *   - Postgres stores `t.boolean()` as native bool. `CASE WHEN <bool>` is
+ *     direct evaluation.
+ *   - MySQL stores `t.boolean()` as TINYINT(1). Same as SQLite.
+ *
+ * We use this inside `SUM(CASE WHEN ${TRUE_EXPR} THEN ... ELSE 0 END)`. Note
+ * `CASE WHEN <column>` (no comparison) is sargable on Postgres bool indexes,
+ * which `<column> = 1 OR <column> = true` is NOT.
+ */
+const TRUE_EXPR = 'in_intersect';
+
+/** Commit-side aggregates from commit_facts. Note: first-writer-wins on
+ *  shared commits — see commit_facts dedupe in event-service. */
+async function getCommitAggregates(db, params) {
+  let q = db('commit_facts').select(
+    db.raw('COUNT(*) as commit_count_window'),
+    db.raw('COALESCE(SUM(lines_added), 0) as lines_added_window'),
+    db.raw('COALESCE(SUM(lines_removed), 0) as lines_removed_window'),
+    db.raw('COALESCE(SUM(files_count), 0) as files_count_window'),
+    db.raw(`SUM(CASE WHEN ${TRUE_EXPR} THEN 1 ELSE 0 END) as commit_count_intersect`),
+    db.raw('COALESCE(SUM(lines_added_intersect), 0) as lines_added_intersect'),
+    db.raw('COALESCE(SUM(lines_removed_intersect), 0) as lines_removed_intersect'),
+    // intersect files_count is conservative: only commits flagged in_intersect contribute
+    db.raw(`COALESCE(SUM(CASE WHEN ${TRUE_EXPR} THEN files_count ELSE 0 END), 0) as files_count_intersect`)
+  );
+  applyCommitFactFilters(q, params);
+
+  const r = (await q)[0] || {};
+  return {
+    window: {
+      commit_count: num(r.commit_count_window),
+      lines_added: num(r.lines_added_window),
+      lines_removed: num(r.lines_removed_window),
+      files_count: num(r.files_count_window),
+    },
+    intersect: {
+      commit_count: num(r.commit_count_intersect),
+      lines_added: num(r.lines_added_intersect),
+      lines_removed: num(r.lines_removed_intersect),
+      files_count: num(r.files_count_intersect),
+    },
+  };
+}
+
+/**
+ * GET /api/v1/stats/repos/summary  — full metric package for the dashboard
+ * KPI row. The frontend picks "window" or "intersect" via the global toggle.
+ */
+async function getRepoSummary(db, params) {
+  const [edit, commit, repoCount, devCount] = await Promise.all([
+    getEditAggregates(db, { ...params, requireRepo: true }),
+    getCommitAggregates(db, params),
+    db('commit_facts').countDistinct('git_remote_url as c').modify(q => applyCommitFactFilters(q, params)).first(),
+    db('commit_facts').countDistinct('git_author_email as c').modify(q => applyCommitFactFilters(q, params)).first(),
+  ]);
+
+  return {
+    edit,
+    commit_window: commit.window,
+    commit_intersect: commit.intersect,
+    repo_count: num(repoCount?.c),
+    developer_count: num(devCount?.c),
+    session_count: edit.sessions,
+  };
+}
+
+/**
+ * Ranking by user / repo / user_repo for any single metric.
+ *
+ * The shape of the result is `{rows: [...], metric: '<key>'}` so the
+ * frontend can render the ranked metric column without re-deriving the key.
+ *
+ * Implementation strategy:
+ *   - Edit-only metrics queried from `events` LEFT JOIN session_repo
+ *   - Commit-only metrics queried from `commit_facts`
+ *   - Combined metrics (retention) need both — we do two queries and merge
+ *     by the group key in JS. (Simpler than a 4-way SQL join, and the group
+ *     cardinality is small.)
+ */
+async function getRepoRanking(db, params) {
+  const groupBy = ['user', 'repo', 'user_repo'].includes(params.groupBy)
+    ? params.groupBy : 'user';
+  const metric = params.metric || 'commit_added_intersect';
+  const limit = Math.min(2000, parseInt(params.limit, 10) || 200);
+
+  // Always fetch both sides so every column in the row is populated, no
+  // matter which metric the user is sorting by. The frontend table renders
+  // edit+, commit+, retention etc. for every row regardless of sort key —
+  // so a half-populated row would render zeros and look broken.
+
+  // Edit query (group by chosen dimension)
+  const sub = sessionRepoSub(db).as('sr');
+  let editQ = db('events').leftJoin(sub, 'events.session_id', 'sr.session_id');
+  addGroupByCols(editQ, groupBy, 'events.username', 'sr.git_remote_url');
+  editQ.select(
+    db.raw('COALESCE(SUM(events.lines_added), 0) as edit_added'),
+    db.raw('COALESCE(SUM(events.lines_removed), 0) as edit_removed')
+  ).where('events.event_type', 'tool_use')
+   .whereNotNull('sr.git_remote_url');
+  applyDateRange(editQ, params, 'events.event_time');
+  if (params.user)     editQ.where('events.username', params.user);
+  if (params.repo)     editQ.where('sr.git_remote_url', params.repo);
+  if (params.gitEmail) editQ.where('sr.git_author_email', params.gitEmail);
+  addGroupByGroup(editQ, groupBy, 'events.username', 'sr.git_remote_url');
+  const editRows = await editQ;
+
+  // Commit query
+  let commitQ = db('commit_facts');
+  addGroupByCols(commitQ, groupBy, 'username', 'git_remote_url');
+  commitQ.select(
+    db.raw('COUNT(*) as commit_count_window'),
+    db.raw('COALESCE(SUM(lines_added), 0) as commit_added_window'),
+    db.raw('COALESCE(SUM(lines_removed), 0) as commit_removed_window'),
+    db.raw(`SUM(CASE WHEN ${TRUE_EXPR} THEN 1 ELSE 0 END) as commit_count_intersect`),
+    db.raw('COALESCE(SUM(lines_added_intersect), 0) as commit_added_intersect'),
+    db.raw('COALESCE(SUM(lines_removed_intersect), 0) as commit_removed_intersect')
+  );
+  applyCommitFactFilters(commitQ, params);
+  addGroupByGroup(commitQ, groupBy, 'username', 'git_remote_url');
+  const commitRows = await commitQ;
+
+  // Merge by group key
+  const byKey = {};
+  const groupKey = (r) => groupBy === 'user' ? r.username
+                       : groupBy === 'repo' ? r.git_remote_url
+                       : `${r.username}|${r.git_remote_url}`;
+
+  for (const r of editRows) {
+    const k = groupKey(r);
+    byKey[k] = byKey[k] || baseRankingRow(r, groupBy);
+    byKey[k].edit_added = num(r.edit_added);
+    byKey[k].edit_removed = num(r.edit_removed);
+    byKey[k].edit_net = num(r.edit_added) - num(r.edit_removed);
+  }
+  for (const r of commitRows) {
+    const k = groupKey(r);
+    byKey[k] = byKey[k] || baseRankingRow(r, groupBy);
+    byKey[k].commit_count_window = num(r.commit_count_window);
+    byKey[k].commit_added_window = num(r.commit_added_window);
+    byKey[k].commit_removed_window = num(r.commit_removed_window);
+    byKey[k].commit_count_intersect = num(r.commit_count_intersect);
+    byKey[k].commit_added_intersect = num(r.commit_added_intersect);
+    byKey[k].commit_removed_intersect = num(r.commit_removed_intersect);
+  }
+
+  // Compute derived metrics + sort
+  const all = Object.values(byKey).map(row => {
+    const editAdded = row.edit_added || 0;
+    const editRemoved = row.edit_removed || 0;
+    row.retention_window = editAdded > 0 ? (row.commit_added_window || 0) / editAdded : 0;
+    row.retention_intersect = editAdded > 0 ? (row.commit_added_intersect || 0) / editAdded : 0;
+    row.churn_ratio = editAdded > 0 ? editRemoved / editAdded : 0;
+    return row;
+  });
+
+  all.sort((a, b) => (b[metric] || 0) - (a[metric] || 0));
+  return { rows: all.slice(0, limit), metric, groupBy };
+}
+
+function baseRankingRow(r, groupBy) {
+  const row = {};
+  if (groupBy === 'user' || groupBy === 'user_repo') row.username = r.username || null;
+  if (groupBy === 'repo' || groupBy === 'user_repo') row.git_remote_url = r.git_remote_url || null;
+  // Pre-fill all metric columns so the row shape is uniform
+  Object.assign(row, {
+    edit_added: 0, edit_removed: 0, edit_net: 0,
+    commit_count_window: 0, commit_added_window: 0, commit_removed_window: 0,
+    commit_count_intersect: 0, commit_added_intersect: 0, commit_removed_intersect: 0,
+    retention_window: 0, retention_intersect: 0, churn_ratio: 0,
+  });
+  return row;
+}
+
+function addGroupByCols(q, groupBy, userCol, repoCol) {
+  if (groupBy === 'user' || groupBy === 'user_repo') q.select(`${userCol} as username`);
+  if (groupBy === 'repo' || groupBy === 'user_repo') q.select(`${repoCol} as git_remote_url`);
+}
+function addGroupByGroup(q, groupBy, userCol, repoCol) {
+  if (groupBy === 'user' || groupBy === 'user_repo') q.groupBy(userCol);
+  if (groupBy === 'repo' || groupBy === 'user_repo') q.groupBy(repoCol);
+}
+
+/**
+ * Daily time series for one or more metrics. The frontend picks which
+ * series to render via checkboxes and we send all of them in one shot to
+ * avoid multiple round trips when toggling.
+ */
+async function getRepoTrend(db, params) {
+  // Edit time series
+  const sub = sessionRepoSub(db).as('sr');
+  let editQ = db('events')
+    .leftJoin(sub, 'events.session_id', 'sr.session_id')
+    .select(
+      db.raw("SUBSTR(events.event_time, 1, 10) as date"),
+      db.raw('COALESCE(SUM(events.lines_added), 0) as edit_added'),
+      db.raw('COALESCE(SUM(events.lines_removed), 0) as edit_removed')
+    )
+    .where('events.event_type', 'tool_use')
+    .whereNotNull('sr.git_remote_url')
+    .groupBy(db.raw("SUBSTR(events.event_time, 1, 10)"))
+    .orderBy('date', 'asc');
+  applyDateRange(editQ, params, 'events.event_time');
+  if (params.user)     editQ.where('events.username', params.user);
+  if (params.repo)     editQ.where('sr.git_remote_url', params.repo);
+  if (params.gitEmail) editQ.where('sr.git_author_email', params.gitEmail);
+  const editRows = await editQ;
+
+  // Commit time series
+  let commitQ = db('commit_facts')
+    .select(
+      db.raw("SUBSTR(commit_time, 1, 10) as date"),
+      db.raw('COUNT(*) as commit_count_window'),
+      db.raw('COALESCE(SUM(lines_added), 0) as commit_added_window'),
+      db.raw(`SUM(CASE WHEN ${TRUE_EXPR} THEN 1 ELSE 0 END) as commit_count_intersect`),
+      db.raw('COALESCE(SUM(lines_added_intersect), 0) as commit_added_intersect')
+    )
+    .groupBy(db.raw("SUBSTR(commit_time, 1, 10)"))
+    .orderBy('date', 'asc');
+  applyCommitFactFilters(commitQ, params);
+  const commitRows = await commitQ;
+
+  // Merge by date so the frontend gets one row per day with all metrics
+  const byDate = {};
+  for (const r of editRows) {
+    byDate[r.date] = byDate[r.date] || { date: r.date };
+    byDate[r.date].edit_added = num(r.edit_added);
+    byDate[r.date].edit_removed = num(r.edit_removed);
+  }
+  for (const r of commitRows) {
+    byDate[r.date] = byDate[r.date] || { date: r.date };
+    byDate[r.date].commit_count_window = num(r.commit_count_window);
+    byDate[r.date].commit_added_window = num(r.commit_added_window);
+    byDate[r.date].commit_count_intersect = num(r.commit_count_intersect);
+    byDate[r.date].commit_added_intersect = num(r.commit_added_intersect);
+  }
+  return Object.values(byDate)
+    .map(d => ({
+      ...d,
+      retention_window:    (d.edit_added || 0) > 0 ? (d.commit_added_window || 0) / d.edit_added : 0,
+      retention_intersect: (d.edit_added || 0) > 0 ? (d.commit_added_intersect || 0) / d.edit_added : 0,
+    }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** List of distinct repos in commit_facts — for the repo dropdown filter. */
+async function getRepoList(db) {
+  const rows = await db('commit_facts')
+    .distinct('git_remote_url')
+    .orderBy('git_remote_url', 'asc');
+  return rows.map(r => r.git_remote_url).filter(Boolean);
+}
+
+/** List of distinct git_author_email — for the developer dropdown. */
+async function getRepoDeveloperList(db) {
+  const rows = await db('commit_facts')
+    .select('git_author_email', 'username')
+    .max('first_seen as last_seen')
+    .whereNotNull('git_author_email')
+    .groupBy('git_author_email', 'username')
+    .orderBy('last_seen', 'desc');
+  return rows;
+}
+
+/** Latest commits for a given repo (for the deepest drilldown panel). */
+async function getRepoCommits(db, params) {
+  const limit = Math.min(500, parseInt(params.limit, 10) || 100);
+  let q = db('commit_facts')
+    .select('commit_hash', 'subject', 'commit_time', 'username',
+            'git_author_email', 'git_remote_url',
+            'lines_added', 'lines_removed', 'in_intersect')
+    .orderBy('commit_time', 'desc')
+    .limit(limit);
+  applyCommitFactFilters(q, params);
+  return q;
+}
+
+module.exports = {
+  getSummary, getRanking, getRankingAll, getDrilldown, getTrend, getRankingTrend, computeDateRange,
+  // Repo-commit tracking
+  getRepoSummary, getRepoRanking, getRepoTrend, getRepoList, getRepoDeveloperList, getRepoCommits,
+};

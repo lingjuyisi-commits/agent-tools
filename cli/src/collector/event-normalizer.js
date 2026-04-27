@@ -25,6 +25,12 @@ function createNormalizedEvent(agentData) {
     token_cache_read: null, token_cache_write: null,
     files_created: null, files_modified: null,
     lines_added: null, lines_removed: null,
+    // Repo-commit tracking fields (populated by claude-code adapter on
+    // SessionStart, and by universal-hook on the synthetic session_commits
+    // event). Null when not in a git repo or git unavailable — server tolerates.
+    cwd: null,
+    git_remote_url: null,
+    git_author_email: null,
     ...agentData,
   };
 }

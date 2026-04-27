@@ -38,7 +38,80 @@ class LocalStore {
         key TEXT PRIMARY KEY,
         value TEXT NOT NULL
       );
+
+      -- Per-session scratch space used by the repo-commit tracking feature.
+      -- Populated on SessionStart (start_time, cwd, git fields) and updated
+      -- on each PostToolUse Edit/Write (edit_files JSON array). Read on
+      -- SessionEnd to drive git log --numstat --since=<start> and the
+      -- file-intersection filter for AI-attribution. Rows are best-effort
+      -- and never blocking -- failure to write must not crash the hook.
+      CREATE TABLE IF NOT EXISTS session_meta (
+        session_id TEXT PRIMARY KEY,
+        start_time TEXT,
+        cwd TEXT,
+        git_remote_url TEXT,
+        git_author_email TEXT,
+        edit_files TEXT,           -- JSON array of distinct file paths
+        updated_at TEXT NOT NULL
+      );
     `);
+  }
+
+  // ── session_meta helpers ──────────────────────────────────────────────────
+  // Used by universal-hook to remember per-session context across hook
+  // invocations (each hook is its own short-lived process).
+
+  upsertSessionMeta(sessionId, fields) {
+    if (!sessionId) return;
+    const existing = this.getSessionMeta(sessionId) || {};
+    const merged = {
+      session_id: sessionId,
+      start_time: fields.start_time ?? existing.start_time ?? null,
+      cwd: fields.cwd ?? existing.cwd ?? null,
+      git_remote_url: fields.git_remote_url ?? existing.git_remote_url ?? null,
+      git_author_email: fields.git_author_email ?? existing.git_author_email ?? null,
+      edit_files: fields.edit_files ?? existing.edit_files ?? '[]',
+      updated_at: new Date().toISOString(),
+    };
+    this.db.prepare(`
+      INSERT INTO session_meta (session_id, start_time, cwd, git_remote_url, git_author_email, edit_files, updated_at)
+      VALUES (@session_id, @start_time, @cwd, @git_remote_url, @git_author_email, @edit_files, @updated_at)
+      ON CONFLICT(session_id) DO UPDATE SET
+        start_time       = COALESCE(excluded.start_time, session_meta.start_time),
+        cwd              = COALESCE(excluded.cwd, session_meta.cwd),
+        git_remote_url   = COALESCE(excluded.git_remote_url, session_meta.git_remote_url),
+        git_author_email = COALESCE(excluded.git_author_email, session_meta.git_author_email),
+        edit_files       = excluded.edit_files,
+        updated_at       = excluded.updated_at
+    `).run(merged);
+  }
+
+  getSessionMeta(sessionId) {
+    if (!sessionId) return null;
+    return this.db.prepare('SELECT * FROM session_meta WHERE session_id = ?').get(sessionId) || null;
+  }
+
+  /** Add a file path to the session's edit_files set. Idempotent (no duplicates). */
+  addSessionEditFile(sessionId, filePath) {
+    if (!sessionId || !filePath) return;
+    const row = this.getSessionMeta(sessionId);
+    let files = [];
+    if (row?.edit_files) {
+      try { files = JSON.parse(row.edit_files); } catch {}
+      if (!Array.isArray(files)) files = [];
+    }
+    if (files.indexOf(filePath) === -1) {
+      files.push(filePath);
+      this.upsertSessionMeta(sessionId, { edit_files: JSON.stringify(files) });
+    }
+  }
+
+  /** Best-effort cleanup — not currently called automatically; a future
+   *  cron could prune sessions older than N days. Intentionally lenient. */
+  pruneSessionMeta(olderThanIso) {
+    try {
+      this.db.prepare('DELETE FROM session_meta WHERE updated_at < ?').run(olderThanIso);
+    } catch {}
   }
 
   getMeta(key) {
