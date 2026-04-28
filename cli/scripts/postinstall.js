@@ -88,7 +88,18 @@ try {
   const CONFIG_FILE = path.join(HOME, 'config.json');
   const DATA_DIR = path.join(HOME, 'data');
 
-  // --- Apply default config (always overwrite — config is server-controlled) ---
+  // --- Apply default config ---
+  //
+  // server-controlled fields (server.url, sync.*, guard.ccSwitchDownloadUrl,
+  // repoTracking.*) ALWAYS win — admins push policy via default-config.json
+  // and shouldn't be overridden by stale user files. But user-controlled
+  // fields (currently just `username`, which lets the user align their
+  // identity with whatever the dashboard / SSO recognizes them as) MUST
+  // survive an upgrade — otherwise every CLI version bump silently breaks
+  // the user's identity until they manually re-add it.
+  //
+  // Strategy: read the existing config first, pull out the user-preservable
+  // fields, then merge them onto the new defaults.
   const defaultCfgPath = path.join(__dirname, '..', 'default-config.json');
   let autoConfigured = false;
 
@@ -97,8 +108,27 @@ try {
     const serverUrl = defaultCfg?.server?.url;
 
     if (serverUrl) {
+      // Whitelist of user-set top-level fields to preserve across upgrades.
+      // Add to this list (NOT to a blanket `...existing` merge) — that way
+      // we never accidentally carry forward deprecated or server-owned
+      // fields the user might have copy-pasted into their config.
+      const PRESERVED_USER_FIELDS = ['username'];
+      const preserved = {};
+      try {
+        if (fs.existsSync(CONFIG_FILE)) {
+          const existing = JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf-8'));
+          for (const k of PRESERVED_USER_FIELDS) {
+            if (existing && existing[k] !== undefined) preserved[k] = existing[k];
+          }
+        }
+      } catch {
+        // Corrupt existing config — accept that we lose user fields rather
+        // than block install. Better than leaving a half-migrated file.
+      }
+
       const cfg = {
         ...defaultCfg,
+        ...preserved,
         initialized: true,
         initTime: new Date().toISOString(),
         autoConfigured: true,
@@ -107,6 +137,9 @@ try {
       fs.mkdirSync(DATA_DIR, { recursive: true });
       fs.writeFileSync(CONFIG_FILE, JSON.stringify(cfg, null, 2), 'utf-8');
       console.log(`\n[agent-tools] 已配置服务器地址: ${serverUrl}`);
+      if (preserved.username) {
+        console.log(`              已保留用户配置: username=${preserved.username}`);
+      }
       autoConfigured = true;
     }
   }
