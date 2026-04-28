@@ -6,9 +6,10 @@
 <title>agent-tools 使用指南</title>
 <style>
   body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-         max-width: 760px; margin: 0 auto; padding: 32px 24px; color: #333; line-height: 1.7; }
+         max-width: 820px; margin: 0 auto; padding: 32px 24px; color: #333; line-height: 1.7; }
   h1 { margin: 0 0 8px; color: #2c3e50; }
   h2 { margin: 36px 0 12px; color: #2c3e50; padding-top: 12px; border-top: 1px solid #eee; }
+  h3 { margin: 24px 0 8px; color: #2c3e50; font-size: 1.05em; }
   .lead { color: #666; margin-bottom: 28px; }
   code { background: #f0f2f5; padding: 2px 6px; border-radius: 3px; font-size: 0.92em;
          font-family: 'SF Mono', Menlo, Consolas, monospace; color: #c7254e; }
@@ -17,53 +18,247 @@
   pre code { background: transparent; padding: 0; color: inherit; }
   .tip { background: #f0f9eb; border-left: 4px solid #67c23a; padding: 12px 16px;
          border-radius: 4px; margin: 16px 0; }
+  .warn { background: #fff7e6; border-left: 4px solid #f0ad4e; padding: 12px 16px;
+          border-radius: 4px; margin: 16px 0; }
+  .ai { background: #eef5ff; border-left: 4px solid #4a90d9; padding: 12px 16px;
+        border-radius: 4px; margin: 16px 0; }
   .back { display: inline-block; margin: 32px 0 0; color: #4a90d9; text-decoration: none; }
   .back:hover { text-decoration: underline; }
   ol li, ul li { margin: 6px 0; }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 13px; }
+  th, td { border: 1px solid #ddd; padding: 8px 10px; text-align: left; vertical-align: top; }
+  th { background: #f7f7f7; }
+  .copy-prompt { display: inline-block; padding: 6px 14px; background: #4a90d9; color: #fff;
+                 border-radius: 4px; cursor: pointer; font-size: 13px; border: none; }
+  .copy-prompt:hover { background: #3a7bc8; }
 </style>
 </head>
 <body>
 
 <h1>agent-tools 使用指南</h1>
-<p class="lead">用于统计 Claude Code 等 AI 编程助手的使用数据，自动采集、定时上报。</p>
+<p class="lead">统计 Claude Code 等 AI 编程助手的使用数据。自动采集、定时上报。</p>
 
 <h2>安装</h2>
 
-<p>管理员会提供安装包下载地址，下载后执行：</p>
+<p>从 Dashboard 右上角「下载客户端」获取安装包，下载后执行：</p>
 <pre><code>npm install -g agent-tools-cli-x.x.x.tgz</code></pre>
 
-<p>安装过程会自动完成：</p>
+<p>安装会自动：</p>
 <ul>
-  <li>写入 Claude Code hooks，开始采集使用数据</li>
+  <li>写入 Claude Code / CodeBuddy 的 hooks，开始采集</li>
   <li>配置服务器地址</li>
+  <li>（macOS/Windows）安装 guard 守护进程，防止 cc-switch 等工具覆盖配置</li>
 </ul>
 
-<p>安装完成后验证：</p>
-<pre><code>agent-tools --version</code></pre>
+<p>验证：</p>
+<pre><code>agent-tools --version
+agent-tools status</code></pre>
 
-<h2>正常使用</h2>
+<h2>配置用户标识 <span style="font-size:0.75em;color:#e67e22;">（macOS 用户必做）</span></h2>
 
-<p>安装完成后无需任何操作，在 Claude Code 里正常使用即可。数据会在后台自动采集并上报到 Dashboard。</p>
-
-<div class="tip">
-  首次安装后，打开 Claude Code 执行一次任何操作（编辑文件、运行命令等），等 1–2 分钟后刷新 Dashboard 即可看到数据。
+<div class="warn">
+  <strong>macOS 用户必须配置：</strong>Mac 的 OS 登录名通常是个人化的（如 <code>leon</code>、<code>perseus</code>），跟你在 Dashboard 用的 SSO 身份（如 <code>leon@corp.com</code>）对不上，<strong>不配置会在 Dashboard 看不到自己的数据</strong>。
 </div>
 
-<h2>遇到问题？重新安装</h2>
+<p>编辑 <code>~/.agent-tools/config.json</code>，加一行 <code>username</code>，值就是你登录 Dashboard 的那个 SSO 名：</p>
 
-<p>遇到任何问题（无数据上报、命令找不到、hooks 失效等），<strong>重新安装</strong>即可解决绝大多数问题：</p>
+<pre><code>{
+  "server": { "url": "https://..." },
+  "username": "leon@corp.com"
+}</code></pre>
 
-<pre><code>npm install -g agent-tools-cli-x.x.x.tgz</code></pre>
+<p>不知道自己的 SSO 名？打开 Dashboard 看右上角，登录后的那个名字就是。</p>
 
-<p>重装会自动刷新 hooks 路径、重新配置 cc-switch 通用配置，无需任何手动操作。</p>
+<p>下次 hook 触发后，新事件就会用这个标识上报。已上报的旧数据不动。升级客户端时该字段会被保留，不需要重配。</p>
 
-<h2>仍然有问题？</h2>
+<div class="ai">
+  让 Claude Code 帮你一键配置：
+  <pre style="margin-top:8px;"><code>请帮我编辑 ~/.agent-tools/config.json，加一个 username 字段，值是 [我的SSO名]。
+注意：保留文件里现有的其他字段（server.url、sync 等）不要动。</code></pre>
+</div>
 
-<p>到 <a href="https://github.com/lingjuyisi-commits/agent-tools/issues" target="_blank" rel="noopener">GitHub Issues</a> 反馈，请附上：</p>
+<h2>遇到问题？让 Claude Code 帮你排查</h2>
+
+<div class="ai">
+  <strong>推荐：</strong>把下面整段「排查脚本」复制粘贴给 Claude Code，让它自己跑命令、读输出、对照下面的「常见症状表」给出诊断和修复建议。
+</div>
+
+<h3>给 Claude Code 的排查脚本</h3>
+
+<pre id="ai-prompt"><code>我装了 agent-tools 但遇到问题（[在这里描述：无数据 / 没有 hooks 触发 / 装不上 / ……]）。
+请按下面的步骤帮我排查：
+
+1. 跑下面这些诊断命令，把每一条的输出都给我看：
+
+# 客户端版本
+agent-tools --version
+
+# 客户端 + 已检测到的 agent + hooks 状态
+agent-tools status
+
+# 客户端配置（脱敏看一下 server.url、username）
+cat ~/.agent-tools/config.json
+
+# 本地事件队列状态（synced=0 表示未上报）
+sqlite3 ~/.agent-tools/data/local.db \
+  "SELECT synced, COUNT(*) FROM local_events GROUP BY synced;"
+
+# 最近一次同步的实际请求和响应（试一次，看输出）
+DEBUG_AGENT_TOOLS=1 agent-tools sync 2>&1
+
+# Claude Code hooks 是否注入
+cat ~/.claude/settings.json 2>/dev/null | python3 -m json.tool | grep -A2 "hooks\|universal-hook" | head -40
+
+# 自动更新 / 安装日志
+cat ~/.agent-tools/data/update-log.json 2>/dev/null
+
+# 服务器是否可达
+SERVER_URL=$(cat ~/.agent-tools/config.json | python3 -c "import sys,json; print(json.load(sys.stdin)['server']['url'])")
+curl -sS -o /dev/null -w "HTTP %{http_code}  time %{time_total}s\n" "$SERVER_URL/api/v1/health"
+
+2. 把上面输出对照下面的「常见症状」表给我诊断（症状 → 根因 → 修复命令），
+   然后给我一条具体的修复命令。不要让我手填路径。
+
+3. 如果修复需要重启 Claude Code 才能生效，明确告诉我。</code></pre>
+
+<p>
+  <button class="copy-prompt" onclick="copyPrompt()">复制上面的排查脚本</button>
+  <span id="copy-status" style="margin-left:12px;font-size:13px;color:#67c23a;display:none;">已复制 ✓</span>
+</p>
+
+<script>
+function copyPrompt() {
+  const t = document.getElementById('ai-prompt').innerText;
+  navigator.clipboard.writeText(t).then(() => {
+    const s = document.getElementById('copy-status');
+    s.style.display = '';
+    setTimeout(() => s.style.display = 'none', 2000);
+  });
+}
+</script>
+
+<h3>常见症状表（Claude Code 用这个对照诊断）</h3>
+
+<table>
+<thead>
+<tr><th>症状</th><th>诊断信号</th><th>修复</th></tr>
+</thead>
+<tbody>
+
+<tr>
+  <td>客户端 sync 显示成功，Dashboard 看不到数据</td>
+  <td>
+    <code>agent-tools sync</code> 输出含 <code>errors</code> &gt; 0；<br>
+    或 <code>local_events.synced=1</code> 但服务端 events 表为空
+  </td>
+  <td>
+    服务端 schema 落后（migration 没跑）。<br>
+    联系管理员升级服务端或运行 <code>npm run migrate</code>。<br>
+    然后客户端：<br>
+    <pre><code>cp ~/.agent-tools/data/local.db ~/.agent-tools/data/local.db.bak
+sqlite3 ~/.agent-tools/data/local.db \
+  "UPDATE local_events SET synced=0, synced_at=NULL;"
+agent-tools sync</code></pre>
+  </td>
+</tr>
+
+<tr>
+  <td>Dashboard 看不到自己（看到的是 OS 用户名）</td>
+  <td><code>config.json</code> 里没 <code>username</code> 字段</td>
+  <td>
+    在 <code>~/.agent-tools/config.json</code> 加 <code>"username": "你的SSO名"</code>，
+    然后等下次 hook 自动触发，或手动 <code>agent-tools sync</code>。
+  </td>
+</tr>
+
+<tr>
+  <td>Hooks 不触发（用 Claude Code 后没有事件产生）</td>
+  <td>
+    <code>~/.claude/settings.json</code> 里 <code>hooks</code> 字段为空，
+    或 command 路径指向旧版本（不存在的 node_modules 路径）
+  </td>
+  <td>
+    <pre><code>agent-tools setup --force</code></pre>
+    强制覆盖。仍不行，重启 Claude Code 后再观察。
+  </td>
+</tr>
+
+<tr>
+  <td>切换 cc-switch 供应商后 hooks 消失</td>
+  <td>
+    <code>agent-tools status</code> 显示 cc-switch installed=true 但 protected=false；<br>
+    或 settings.json 里没 hooks 但之前有
+  </td>
+  <td>
+    <pre><code>agent-tools setup --force</code></pre>
+    会把 hooks 写进 cc-switch 的「通用配置」并对所有 claude 供应商启用 commonConfigEnabled。
+    新增供应商后需要再跑一次。
+  </td>
+</tr>
+
+<tr>
+  <td>命令找不到 <code>agent-tools: command not found</code></td>
+  <td><code>which agent-tools</code> 空；<code>npm list -g agent-tools</code> 空</td>
+  <td>
+    全局安装路径不在 PATH。<br>
+    <pre><code>npm config get prefix
+# 把上面输出的 prefix/bin 加进 PATH</code></pre>
+    或重新装：<code>npm install -g &lt;tgz&gt;</code>
+  </td>
+</tr>
+
+<tr>
+  <td>自动更新失败 / 卡在旧版本</td>
+  <td><code>~/.agent-tools/data/update-log.json</code> 里有 <code>status: "failed"</code> 条目</td>
+  <td>
+    看 <code>error</code> 字段：<br>
+    • EACCES → 全局 npm 没写权限，需要 <code>sudo</code> 重装<br>
+    • ENOTFOUND → 服务器不可达<br>
+    • 其他 → 手动重装最新 tgz
+  </td>
+</tr>
+
+<tr>
+  <td>服务器返回 401 / 403</td>
+  <td><code>DEBUG_AGENT_TOOLS=1 agent-tools sync</code> 看到 401/403</td>
+  <td>
+    server URL 错了或者打到了 SSO 登录页。检查 <code>config.json</code> 里 <code>server.url</code> 是不是 API 根（不带路径），
+    再 <code>curl &lt;server&gt;/api/v1/health</code> 看 200。
+  </td>
+</tr>
+
+<tr>
+  <td>本地事件持续堆积（unsynced 越来越多）</td>
+  <td>
+    <code>SELECT COUNT(*) FROM local_events WHERE synced=0;</code> 持续增长
+  </td>
+  <td>
+    服务端持续报 errors。先按上面"sync 显示成功但服务端无数据"流程排查。
+    确认根因修了之后，本地事件会自动重发上去（event_id 唯一去重，不会重复入库）。
+  </td>
+</tr>
+
+<tr>
+  <td>guard 占 CPU / 不停拉起</td>
+  <td>macOS launchd 或 Windows 任务计划里反复 spawn 一个 node 进程</td>
+  <td>
+    <pre><code>agent-tools guard uninstall
+agent-tools guard status   # 确认已移除</code></pre>
+    然后再 <code>agent-tools setup --force</code> 重建，或保持禁用：在 <code>config.json</code> 加 <code>"guard": {"enabled": false}</code>
+  </td>
+</tr>
+
+</tbody>
+</table>
+
+<h3>仍然解决不了</h3>
+
+<p>把以下信息贴到团队反馈渠道：</p>
 <ul>
-  <li><code>agent-tools --version</code> 输出</li>
-  <li>操作系统版本</li>
-  <li><code>~/.agent-tools/data/update-log.json</code> 内容</li>
+  <li>上面排查脚本的全部输出</li>
+  <li>操作系统版本（<code>uname -a</code> / Windows 版本）</li>
+  <li>Claude Code 版本（<code>claude --version</code>）</li>
+  <li>问题描述（什么时候开始的、改了什么）</li>
 </ul>
 
 <a href="/dashboard/" class="back">← 返回 Dashboard</a>
