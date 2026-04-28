@@ -144,6 +144,36 @@
           装好了还是没数据？
         </a>
       </div>
+
+      <!-- Mac 身份不匹配提示 — 仅当登录用户用 Mac 浏览器看且看不到数据时显示。
+           本质是「一人一台 Mac」的简化推断：Mac 的 OS 用户名（leon、perseus
+           之类）通常跟 SSO 身份对不上，事件归到 OS 名下，自己 dashboard 查
+           不到。详细解释 + 配置示例放下面，让用户能直接复制粘贴解决。 -->
+      <div id="mac-identity-hint" style="display:none;margin:32px auto 0;max-width:560px;text-align:left;
+           background:#fffaf0;border:1px solid #f0c987;border-radius:8px;padding:18px 22px;">
+        <div style="font-weight:600;color:#9a6b1a;margin-bottom:10px;">
+          🍎 你是 Mac 用户？这可能是身份没对上
+        </div>
+        <p style="color:#5a4520;font-size:13px;line-height:1.7;margin:0 0 12px;">
+          Mac 的 OS 登录名（如 <code style="background:#fff;padding:1px 5px;border-radius:3px;">leon</code>、
+          <code style="background:#fff;padding:1px 5px;border-radius:3px;">perseus</code>）通常跟你的 SSO 身份
+          (<code id="mac-hint-sso" style="background:#fff;padding:1px 5px;border-radius:3px;">leon@corp.com</code>) 对不上。
+          客户端用 OS 名上报，所以你这里查不到自己。
+        </p>
+        <p style="color:#5a4520;font-size:13px;margin:0 0 8px;"><strong>修复（在 Mac 上跑）：</strong></p>
+        <pre id="mac-hint-snippet" style="background:#2c3e50;color:#e4e7eb;padding:10px 14px;border-radius:5px;
+             font-size:12.5px;line-height:1.5;margin:0 0 12px;overflow-x:auto;"><code></code></pre>
+        <div style="display:flex;gap:10px;align-items:center;">
+          <button onclick="copyMacHintSnippet()"
+                  style="padding:6px 14px;background:#f0c987;color:#5a4520;border:none;
+                         border-radius:4px;cursor:pointer;font-size:12.5px;font-weight:500;">
+            复制修复命令
+          </button>
+          <a href="/dashboard/troubleshooting.html"
+             style="color:#9a6b1a;font-size:12.5px;text-decoration:underline;">详细指南 →</a>
+          <span id="mac-hint-copy-ok" style="display:none;font-size:12.5px;color:#67c23a;">已复制 ✓</span>
+        </div>
+      </div>
     </div>
     <div id="my-content" style="display:none;">
       <div class="kpi-row" id="my-kpi-row"></div>
@@ -459,6 +489,7 @@ function showAuthOverlay(title, msg, showLogin) {
 let authEnabled = true;
 let authenticated = false;
 let isAdmin = false;
+let authUserLogin = '';   // SSO login (used by Mac identity-mismatch hint)
 
 async function checkAuth() {
   try {
@@ -482,6 +513,7 @@ async function checkAuth() {
       return;
     }
 
+    authUserLogin = data.user.login || '';
     document.getElementById('user-info').textContent = data.user.login;
     document.getElementById('user-info').style.display = '';
     document.getElementById('logout-btn').style.display = '';
@@ -646,6 +678,12 @@ async function refreshMy() {
   const hasData = summary && (summary.event_count || summary.token_total);
   document.getElementById('my-empty').style.display    = hasData ? 'none' : '';
   document.getElementById('my-content').style.display  = hasData ? ''     : 'none';
+  // Mac identity-mismatch hint — only on the empty state, only when the
+  // browser is on macOS (good enough proxy for "the user is on a Mac
+  // workstation"; we assume one work machine per person). When the
+  // browser isn't Mac the user might still need it (rare cross-device
+  // case), but they can hit /troubleshooting.html via the existing link.
+  if (!hasData) maybeShowMacHint();
   if (!hasData) return;
 
   renderMyKpi(summary);
@@ -1630,6 +1668,46 @@ async function loadMyRepos() {
       </tbody>
     </table>
   `;
+}
+
+// ===== Mac 身份不匹配提示 =====
+//
+// 触发条件（同时满足才显示）:
+//   1. 用户已登录（`authenticated === true`)，否则没法拿 SSO login
+//   2. /my/summary 返回空数据
+//   3. 浏览器 UA 是 Mac
+//
+// 提示卡里把 SSO login 直接拼进配置示例，用户复制就能用。不命中条件就
+// 静默——避免在 Linux/Windows 用户那误报。
+function maybeShowMacHint() {
+  const hint = document.getElementById('mac-identity-hint');
+  if (!hint) return;
+  const isMac = /Macintosh|Mac OS X/i.test(navigator.userAgent);
+  if (!authenticated || !isMac) {
+    hint.style.display = 'none';
+    return;
+  }
+
+  // SSO login 来自 /auth/session（已经在 checkAuth 里设到全局 `authUserLogin`）。
+  // 取不到就用占位符 — 提示仍有用，用户照葫芦画瓢即可。
+  const sso = (typeof authUserLogin === 'string' && authUserLogin) ? authUserLogin : '你的SSO名';
+  document.getElementById('mac-hint-sso').textContent = sso;
+  document.getElementById('mac-hint-snippet').querySelector('code').textContent =
+    `# 编辑 ~/.agent-tools/config.json，加上 username 字段：\n` +
+    `{\n` +
+    `  "server": { "url": "..." },\n` +
+    `  "username": "${sso}"\n` +
+    `}`;
+  hint.style.display = '';
+}
+
+function copyMacHintSnippet() {
+  const text = document.getElementById('mac-hint-snippet').innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    const ok = document.getElementById('mac-hint-copy-ok');
+    ok.style.display = '';
+    setTimeout(() => ok.style.display = 'none', 2000);
+  });
 }
 
 // ===== 自适应 =====

@@ -146,32 +146,6 @@ function copyPrompt() {
 <tbody>
 
 <tr>
-  <td>客户端 sync 显示成功，Dashboard 看不到数据</td>
-  <td>
-    <code>agent-tools sync</code> 输出含 <code>errors</code> &gt; 0；<br>
-    或 <code>local_events.synced=1</code> 但服务端 events 表为空
-  </td>
-  <td>
-    服务端 schema 落后（migration 没跑）。<br>
-    联系管理员升级服务端或运行 <code>npm run migrate</code>。<br>
-    然后客户端：<br>
-    <pre><code>cp ~/.agent-tools/data/local.db ~/.agent-tools/data/local.db.bak
-sqlite3 ~/.agent-tools/data/local.db \
-  "UPDATE local_events SET synced=0, synced_at=NULL;"
-agent-tools sync</code></pre>
-  </td>
-</tr>
-
-<tr>
-  <td>Dashboard 看不到自己（看到的是 OS 用户名）</td>
-  <td><code>config.json</code> 里没 <code>username</code> 字段</td>
-  <td>
-    在 <code>~/.agent-tools/config.json</code> 加 <code>"username": "你的SSO名"</code>，
-    然后等下次 hook 自动触发，或手动 <code>agent-tools sync</code>。
-  </td>
-</tr>
-
-<tr>
   <td>Hooks 不触发（用 Claude Code 后没有事件产生）</td>
   <td>
     <code>~/.claude/settings.json</code> 里 <code>hooks</code> 字段为空，
