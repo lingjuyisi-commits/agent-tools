@@ -3,7 +3,15 @@ const path = require('path');
 const crypto = require('crypto');
 
 function buildApp(db, config) {
-  const app = fastify({ logger: true });
+  // trustProxy lets Fastify read X-Forwarded-Proto / X-Forwarded-For from
+  // an upstream Nginx (or any other reverse proxy). Without it:
+  //   - session cookie's `secure: 'auto'` always sees req.protocol = 'http'
+  //     → cookie not marked Secure → modern browsers silently reject it on
+  //     HTTPS sites → login loops
+  //   - request.ip is the proxy's loopback, not the real client
+  // Safe to enable unconditionally: when there is no proxy, the headers
+  // are absent and Fastify falls back to the actual socket values.
+  const app = fastify({ logger: true, trustProxy: true });
   const authEnabled = !!(config.auth?.provider && config.auth?.clientId);
 
   app.register(require('@fastify/cors'));
