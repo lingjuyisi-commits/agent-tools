@@ -33,8 +33,37 @@ class Uploader {
 
       if (response.ok) {
         const result = await response.json();
-        const ids = events.map(e => e.event_id);
-        store.markSynced(ids);
+
+        // Only mark synced when the server actually accounted for every
+        // event. Three benign outcomes per event:
+        //   - accepted   (newly stored)
+        //   - duplicates (server saw this event_id before)
+        //   - dropped    (server intentionally skipped, e.g. session_commits
+        //                 to a non-allowlisted repo)
+        // If `errors > 0` the server hit a real failure (schema mismatch,
+        // bad data) — we DON'T know which event failed, so we leave the
+        // whole batch unsynced and retry on next sync. This is what
+        // prevents the "client says success, server has nothing" bug from
+        // silently losing data when a server is mis-migrated.
+        const total = events.length;
+        const handled = (result.accepted || 0) + (result.duplicates || 0) + (result.dropped || 0);
+        const allHandled = handled === total && !result.errors;
+
+        if (allHandled) {
+          const ids = events.map(e => e.event_id);
+          store.markSynced(ids);
+        } else {
+          // Surface the discrepancy so operators can debug. Skip on the
+          // first failure too quiet — only print when DEBUG flag set or
+          // when the loss would be silent (errors > 0).
+          if (process.env.DEBUG_AGENT_TOOLS || result.errors) {
+            console.error(
+              `[agent-tools] sync incomplete: sent ${total}, accepted ${result.accepted || 0}, ` +
+              `duplicates ${result.duplicates || 0}, dropped ${result.dropped || 0}, errors ${result.errors || 0}. ` +
+              `Events left unsynced for retry; check server schema (migrations) and logs.`
+            );
+          }
+        }
 
         // Auto-update: server tells us a newer version is available
         if (result.update?.version && result.update?.downloadUrl) {
@@ -46,7 +75,7 @@ class Uploader {
           if (process.env.DEBUG_AGENT_TOOLS) console.error('[agent-tools] update log report failed:', err.message);
         });
 
-        return { synced: events.length, ...result };
+        return { synced: allHandled ? events.length : 0, ...result };
       } else {
         const text = await response.text().catch(() => '');
         return { error: `Server returned ${response.status}: ${text}` };
